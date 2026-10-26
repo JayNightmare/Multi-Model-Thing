@@ -1,0 +1,3 @@
+-r requirements.txt
+# Optional: local GGUF inference. Without it (or without weights) the service runs in mock mode.
+llama-cpp-python>=0.2.90

@@ -1,0 +1,26 @@
+services:
+  fuzzer:
+    build: ./fuzzer
+    ports:
+      - "127.0.0.1:8001:8001"
+    environment:
+      PORT: "8001"
+      FUZZER_MODEL_PATH: /models/model.gguf
+    volumes:
+      - ./models:/models:ro
+
+  gateway:
+    build: ./gateway
+    ports:
+      - "127.0.0.1:8000:8000"
+    environment:
+      PORT: "8000"
+      DUCKDB_PATH: /data/traces.duckdb
+      FUZZER_URL: http://fuzzer:8001
+    volumes:
+      - gateway-data:/data
+    depends_on:
+      - fuzzer
+
+volumes:
+  gateway-data:

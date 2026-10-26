@@ -1,0 +1,32 @@
+# Usage: docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+services:
+  fuzzer:
+    restart: unless-stopped
+
+  gateway:
+    restart: unless-stopped
+    environment:
+      CORS_ORIGIN: ${CORS_ORIGIN:-https://studio.nexusgit.info}
+      TRUST_PROXY: "true"
+      AUTH_PASSWORD: ${AUTH_PASSWORD:?set AUTH_PASSWORD in .env}
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env (openssl rand -hex 32)}
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      GATEWAY_DOMAIN: ${GATEWAY_DOMAIN:-gateway.nexusgit.info}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - gateway
+
+volumes:
+  caddy-data:
+  caddy-config:
