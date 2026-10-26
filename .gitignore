@@ -187,6 +187,7 @@ downloads/
 eggs/
 .eggs/
 lib/
+!studio/src/lib/
 lib64/
 parts/
 sdist/
