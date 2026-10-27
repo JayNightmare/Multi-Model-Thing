@@ -10,7 +10,7 @@ module.exports = {
 			env: {
 				NODE_ENV: "production",
 				HOST: "127.0.0.1",
-				PORT: "8000",
+				PORT: "9012",
 				FUZZER_URL: "http://127.0.0.1:8001",
 				DUCKDB_PATH: "./data/traces.duckdb",
 				TRUST_PROXY: "true",
@@ -25,7 +25,7 @@ module.exports = {
 			interpreter: "none",
 			env: {
 				HOST: "127.0.0.1",
-				PORT: "8001",
+				PORT: "9013",
 				FUZZER_MODEL_PATH: "../models/model.gguf",
 			},
 		},
