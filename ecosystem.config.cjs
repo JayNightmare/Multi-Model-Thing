@@ -11,7 +11,7 @@ module.exports = {
 				NODE_ENV: "production",
 				HOST: "127.0.0.1",
 				PORT: "9012",
-				FUZZER_URL: "http://127.0.0.1:8001",
+				FUZZER_URL: "http://127.0.0.1:9013",
 				DUCKDB_PATH: "./data/traces.duckdb",
 				TRUST_PROXY: "true",
 			},

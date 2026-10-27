@@ -18,7 +18,7 @@
 		"test": "vitest run"
 	},
 	"dependencies": {
-		"@duckdb/node-api": "^2.0.0-r.1",
+		"@duckdb/node-api": "1.4.5-r.1",
 		"@fastify/cors": "^11.3.1",
 		"@fastify/websocket": "^11.3.4",
 		"fastify": "^5.12.7",
