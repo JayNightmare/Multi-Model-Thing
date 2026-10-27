@@ -134,9 +134,11 @@ async function main(): Promise<void> {
 	);
 }
 
+// Under pm2, argv[1] is pm2's fork wrapper rather than this file, so also trust pm_id.
 if (
-	process.argv[1] &&
-	import.meta.url === pathToFileURL(process.argv[1]).href
+	process.env.pm_id !== undefined ||
+	(process.argv[1] &&
+		import.meta.url === pathToFileURL(process.argv[1]).href)
 ) {
 	main().catch((err) => {
 		console.error("Fatal initialization error:", err);
