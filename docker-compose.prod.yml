@@ -20,6 +20,7 @@ services:
       - "443:443/udp"
     environment:
       GATEWAY_DOMAIN: ${GATEWAY_DOMAIN:-gateway.nexusgit.info}
+      GATEWAY_UPSTREAM: gateway:8000
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data

@@ -2,5 +2,5 @@
 	encode gzip
 	header Strict-Transport-Security "max-age=31536000; includeSubDomains"
 	# Handles the /v1/telemetry WebSocket upgrade as well.
-	reverse_proxy gateway:8000
+	reverse_proxy {$GATEWAY_UPSTREAM:127.0.0.1:8000}
 }
