@@ -31,6 +31,7 @@ import {
 	EXAMPLES,
 	FAQ,
 	MUTATIONS,
+	OWN_AGENT_STEPS,
 	SAMPLE_EDGES,
 	VERDICTS,
 } from "../content/explainer";
@@ -341,7 +342,7 @@ export default function Landing() {
 			<Section
 				id="sample"
 				title="The sample workflow"
-				lead="A claims pipeline ships with the studio so you can see every verdict without wiring up your own agents."
+				lead="A claims pipeline ships with the studio as the demo project, so you can see every verdict before wiring up your own agents."
 			>
 				<Table
 					aria-label="Sample workflow contracts"
@@ -376,6 +377,39 @@ export default function Landing() {
 						))}
 					</TableBody>
 				</Table>
+			</Section>
+
+			<Section
+				id="own-agents"
+				title="Test your own agents"
+				lead="Connect your AI assistant through a local MCP server. It runs none of your code: the assistant calls your agents and reports what happened."
+			>
+				<CardGrid>
+					{OWN_AGENT_STEPS.map((s, i) => (
+						<InfoCard
+							key={s.title}
+							title={s.title}
+							step={i + 1}
+						>
+							<Body1>{s.body}</Body1>
+						</InfoCard>
+					))}
+				</CardGrid>
+				<span>
+					<Button
+						onClick={() =>
+							navigate(
+								signedIn
+									? ROUTES.connectGuide
+									: ROUTES.signIn,
+							)
+						}
+					>
+						{signedIn
+							? "Connection guide"
+							: "Sign in to get started"}
+					</Button>
+				</span>
 			</Section>
 
 			<Section id="faq" title="Questions">

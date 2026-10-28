@@ -13,6 +13,7 @@ import { PublicShell } from "./components/PublicShell";
 import { RequireAuth } from "./components/RequireAuth";
 import { LoadingState } from "./components/StateViews";
 import { AuthProvider } from "./hooks/AuthContext";
+import { ProjectProvider, useProject } from "./hooks/ProjectContext";
 import { TelemetryProvider } from "./hooks/TelemetryContext";
 import { ROUTES } from "./lib/routes";
 import { ThemeModeProvider } from "./theme/theme";
@@ -27,6 +28,9 @@ const Privacy = lazy(() =>
 	import("./pages/Legal").then((m) => ({ default: m.Privacy })),
 );
 const Account = lazy(() => import("./pages/Account"));
+const Projects = lazy(() => import("./pages/Projects"));
+const ConnectGuide = lazy(() => import("./pages/ConnectGuide"));
+const DeviceApproval = lazy(() => import("./pages/DeviceApproval"));
 const ContractCanvas = lazy(() => import("./pages/ContractCanvas"));
 const PayloadDiff = lazy(() => import("./pages/PayloadDiff"));
 const PayloadDiffIndex = lazy(() =>
@@ -37,16 +41,26 @@ const PayloadDiffIndex = lazy(() =>
 const EventLog = lazy(() => import("./pages/EventLog"));
 const ReportExport = lazy(() => import("./pages/ReportExport"));
 
-// Telemetry (and its WebSocket) only exists for signed-in app pages.
-function AppLayout() {
+// Telemetry (and its WebSocket) only exists for signed-in app pages. Keying by project
+// remounts everything below, so each project starts from its own data.
+function ProjectScope() {
+	const { projectId } = useProject();
 	return (
-		<TelemetryProvider>
+		<TelemetryProvider key={projectId} projectId={projectId}>
 			<AppShell>
 				<Suspense fallback={<LoadingState rows={6} />}>
 					<Outlet />
 				</Suspense>
 			</AppShell>
 		</TelemetryProvider>
+	);
+}
+
+function AppLayout() {
+	return (
+		<ProjectProvider>
+			<ProjectScope />
+		</ProjectProvider>
 	);
 }
 
@@ -123,6 +137,20 @@ export default function App() {
 												<SignIn />
 											}
 										/>
+										<Route
+											element={
+												<RequireAuth />
+											}
+										>
+											<Route
+												path={
+													ROUTES.connect
+												}
+												element={
+													<DeviceApproval />
+												}
+											/>
+										</Route>
 									</Route>
 									<Route
 										element={
@@ -171,6 +199,18 @@ export default function App() {
 												path="account"
 												element={
 													<Account />
+												}
+											/>
+											<Route
+												path="projects"
+												element={
+													<Projects />
+												}
+											/>
+											<Route
+												path="connect"
+												element={
+													<ConnectGuide />
 												}
 											/>
 										</Route>

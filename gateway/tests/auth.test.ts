@@ -52,6 +52,7 @@ describe("gateway auth", () => {
 		expect(status.json()).toEqual({
 			required: true,
 			legalVersion: "1",
+			studioUrl: null,
 			methods: { github: false, password: true },
 		});
 	});

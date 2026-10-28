@@ -24,7 +24,7 @@ export interface TelemetryState {
 const INITIAL_BACKOFF_MS = 1000;
 const MAX_BACKOFF_MS = 10_000;
 
-export function useTelemetrySocket(): TelemetryState {
+export function useTelemetrySocket(projectId: string): TelemetryState {
 	const [isConnected, setConnected] = useState(false);
 	const [isRunning, setRunning] = useState(false);
 	const [activeRunId, setActiveRunId] = useState<string | null>(null);
@@ -60,6 +60,13 @@ export function useTelemetrySocket(): TelemetryState {
 				},
 				onFrame: (frame) => {
 					if (disposed) return;
+					// Runs started from an assistant stream here too, so keep only the open project's.
+					if (
+						"projectId" in frame &&
+						frame.projectId !== undefined &&
+						frame.projectId !== projectId
+					)
+						return;
 					const event = frameToEvent(frame);
 					if (event)
 						setLiveEvents((prev) => [
@@ -102,7 +109,7 @@ export function useTelemetrySocket(): TelemetryState {
 			connectionRef.current?.close();
 			connectionRef.current = null;
 		};
-	}, []);
+	}, [projectId]);
 
 	const triggerRun = useCallback(
 		(fuzzerMode: FuzzerMode, edgeId?: string) => {

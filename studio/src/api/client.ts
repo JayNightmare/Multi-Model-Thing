@@ -1,5 +1,4 @@
 import { frameToEvent } from "../lib/events";
-import { AGENTS, EDGES } from "../lib/topology";
 import { getToken, notifyAuthExpired } from "./auth";
 import type {
 	GatewayHealth,
@@ -19,6 +18,13 @@ import type {
 
 // Empty means same-origin: the Vite dev server proxies /health and /v1 to the gateway.
 const BASE = (import.meta.env.VITE_GATEWAY_URL ?? "").replace(/\/+$/, "");
+
+// Set by ProjectProvider before pages render; every project-scoped request reads it.
+let currentProjectId = "demo";
+export const setCurrentProject = (id: string) => {
+	currentProjectId = id;
+};
+export const getCurrentProject = () => currentProjectId;
 
 class ApiError extends Error {
 	constructor(
@@ -125,14 +131,84 @@ export async function login(password: string): Promise<string> {
 	return res.token;
 }
 
+export interface ProjectInfo {
+	projectId: string;
+	name: string;
+	ownerLogin: string;
+	isDemo: boolean;
+	createdAt: string;
+	edgeCount: number;
+}
+
+export interface TokenInfo {
+	tokenId: string;
+	clientName: string;
+	createdAt: string;
+	lastUsedAt: string | null;
+	expiresAt: string;
+}
+
+export const listProjects = async (): Promise<ProjectInfo[]> =>
+	(await request<{ projects: ProjectInfo[] }>("/v1/projects")).projects;
+
+export const createProject = (name: string) =>
+	request<ProjectInfo>("/v1/projects", {
+		method: "POST",
+		body: JSON.stringify({ name }),
+	});
+
+export const deleteProject = async (projectId: string): Promise<void> => {
+	const res = await fetch(
+		`${BASE}/v1/projects/${encodeURIComponent(projectId)}`,
+		{
+			method: "DELETE",
+			headers: {
+				Authorization: `Bearer ${getToken() ?? ""}`,
+			},
+		},
+	);
+	if (res.status === 401) notifyAuthExpired();
+	if (!res.ok) throw new ApiError(res.status, await errorMessage(res));
+};
+
+export const listTokens = async (): Promise<TokenInfo[]> =>
+	(await request<{ tokens: TokenInfo[] }>("/v1/tokens")).tokens;
+
+export const revokeToken = async (tokenId: string): Promise<void> => {
+	const res = await fetch(
+		`${BASE}/v1/tokens/${encodeURIComponent(tokenId)}`,
+		{
+			method: "DELETE",
+			headers: {
+				Authorization: `Bearer ${getToken() ?? ""}`,
+			},
+		},
+	);
+	if (res.status === 401) notifyAuthExpired();
+	if (!res.ok) throw new ApiError(res.status, await errorMessage(res));
+};
+
+export const lookupDeviceCode = (code: string) =>
+	request<{ userCode: string; clientName: string }>(
+		`/v1/device/lookup?code=${encodeURIComponent(code)}`,
+	);
+
+export const decideDeviceCode = (code: string, approve: boolean) =>
+	request<{ ok: boolean }>("/v1/device/approve", {
+		method: "POST",
+		body: JSON.stringify({ code, approve }),
+	});
+
 async function listRuns(): Promise<RunSummary[]> {
-	const { runs } = await request<{ runs: RunSummary[] }>("/v1/runs");
+	const { runs } = await request<{ runs: RunSummary[] }>(
+		`/v1/runs${query({ projectId: currentProjectId })}`,
+	);
 	return runs;
 }
 
 async function listTraces(q: TraceQuery = {}): Promise<TraceRecord[]> {
 	const { traces } = await request<{ traces: TraceRecord[] }>(
-		`/v1/traces${query({ runId: q.runId, edgeId: q.edgeId })}`,
+		`/v1/traces${query({ projectId: currentProjectId, runId: q.runId, edgeId: q.edgeId })}`,
 	);
 	return traces;
 }
@@ -141,17 +217,10 @@ export const liveClient: ApiClient = {
 	// 503 (unhealthy) still carries the health body.
 	getHealth: () => request<GatewayHealth>("/health", undefined, [503]),
 
-	getTopology: async (): Promise<Topology> => {
-		const traces = await listTraces();
-		// Traces are newest first, so the first hit per target is its latest latency.
-		const agents = AGENTS.map((agent) => ({
-			...agent,
-			lastLatencyMs:
-				traces.find((t) => t.targetNodeId === agent.id)
-					?.durationMs ?? null,
-		}));
-		return { agents, edges: EDGES };
-	},
+	getTopology: () =>
+		request<Topology>(
+			`/v1/projects/${encodeURIComponent(currentProjectId)}/topology`,
+		),
 
 	listRuns,
 	listTraces,

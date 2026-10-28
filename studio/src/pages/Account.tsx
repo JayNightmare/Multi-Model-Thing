@@ -20,7 +20,9 @@ import {
 import { SignOutRegular } from "@fluentui/react-icons";
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { listTokens, revokeToken } from "../api/client";
 import { useAuth } from "../hooks/AuthContext";
+import { useAsync } from "../hooks/useAsync";
 import { useDocumentTitle } from "../hooks/useDocumentTitle";
 import { loadPrefs, savePrefs, type Prefs } from "../lib/prefs";
 import { ROUTES } from "../lib/routes";
@@ -76,6 +78,7 @@ export default function Account() {
 	const { mode, setMode } = useThemeMode();
 	const [prefs, setPrefs] = useState<Prefs>(loadPrefs);
 	const now = useNow(30_000);
+	const tokens = useAsync(() => listTokens(), []);
 	useDocumentTitle("Account");
 
 	if (!user) return null;
@@ -227,6 +230,7 @@ export default function Account() {
 											user.expiresAt,
 											now,
 										)}
+
 										)
 									</Body1>
 								</div>
@@ -336,6 +340,104 @@ export default function Account() {
 						>
 							Saved in this browser.
 						</Caption1>
+					</div>
+				</Card>
+
+				<Card>
+					<div className={styles.stack}>
+						<Subtitle1 as="h2">
+							Connected tools
+						</Subtitle1>
+						{tokens.status === "error" ? (
+							<Caption1
+								className={
+									styles.muted
+								}
+							>
+								Connected tools
+								are not
+								available on
+								this gateway.
+							</Caption1>
+						) : (tokens.data ?? [])
+								.length ===
+						  0 ? (
+							<Body1
+								className={
+									styles.muted
+								}
+							>
+								No tools are
+								connected. See{" "}
+								<Link
+									to={
+										ROUTES.connectGuide
+									}
+								>
+									Connect
+									agents
+								</Link>{" "}
+								to add one.
+							</Body1>
+						) : (
+							(tokens.data ?? []).map(
+								(t) => (
+									<div
+										key={
+											t.tokenId
+										}
+										className={
+											styles.stack
+										}
+									>
+										<Body1>
+											<b>
+												{
+													t.clientName
+												}
+											</b>
+										</Body1>
+										<Caption1
+											className={
+												styles.muted
+											}
+										>
+											Connected{" "}
+											{formatDateTime(
+												t.createdAt,
+											)}{" "}
+											·
+											last
+											used{" "}
+											{t.lastUsedAt
+												? formatDateTime(
+														t.lastUsedAt,
+													)
+												: "never"}{" "}
+											·
+											expires{" "}
+											{formatDateTime(
+												t.expiresAt,
+											)}
+										</Caption1>
+										<span>
+											<Button
+												size="small"
+												onClick={() =>
+													void revokeToken(
+														t.tokenId,
+													).then(
+														tokens.reload,
+													)
+												}
+											>
+												Revoke
+											</Button>
+										</span>
+									</div>
+								),
+							)
+						)}
 					</div>
 				</Card>
 

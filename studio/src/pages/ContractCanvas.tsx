@@ -38,6 +38,7 @@ import {
 	LoadingState,
 } from "../components/StateViews";
 import { useTelemetry } from "../hooks/TelemetryContext";
+import { useProject } from "../hooks/ProjectContext";
 import { useAsync } from "../hooks/useAsync";
 import { loadPrefs } from "../lib/prefs";
 import { ROUTES } from "../lib/routes";
@@ -111,6 +112,7 @@ export default function ContractCanvas() {
 	const navigate = useNavigate();
 	const { resolved } = useThemeMode();
 	const telemetry = useTelemetry();
+	const { isDemo } = useProject();
 	const [mode, setMode] = useState<FuzzerMode>(
 		() => loadPrefs().defaultFuzzerMode,
 	);
@@ -203,7 +205,8 @@ export default function ContractCanvas() {
 	const run = () => telemetry.triggerRun(mode);
 	const retest = () =>
 		selectedEdgeId && telemetry.triggerRun(mode, selectedEdgeId);
-	const runDisabled = !telemetry.isConnected || telemetry.isRunning;
+	const runDisabled =
+		!isDemo || !telemetry.isConnected || telemetry.isRunning;
 
 	const actionBar = (
 		<Toolbar
@@ -269,7 +272,7 @@ export default function ContractCanvas() {
 			<Hero
 				eyebrow="Adversarial contract tester"
 				title="Stress-test every agent handoff"
-				subtitle="Mutate inter-agent payloads, verify the Zod contract on every edge, and see which downstream agents recover or crash."
+				subtitle="Mutate inter-agent payloads, verify the contract on every edge, and see which downstream agents recover or crash."
 				primary={{
 					label: "Review payload diff",
 					icon: <ArrowSwapRegular />,
@@ -313,6 +316,28 @@ export default function ContractCanvas() {
 						topology.reload();
 						runs.reload();
 					}}
+				/>
+			) : empty && !isDemo ? (
+				<EmptyState
+					icon={<GridRegular fontSize={64} />}
+					title={
+						agents.length === 0
+							? "No workflow defined yet"
+							: "No runs for this project yet"
+					}
+					body="Your own agents are tested from your AI assistant through the MCP server. Ask it to define the workflow and run a pass, and results appear here live."
+					action={
+						<Button
+							appearance="primary"
+							onClick={() =>
+								navigate(
+									ROUTES.connectGuide,
+								)
+							}
+						>
+							Connect your agents
+						</Button>
+					}
 				/>
 			) : empty ? (
 				<EmptyState
@@ -494,7 +519,7 @@ export default function ContractCanvas() {
 			{telemetry.lastError ? (
 				<ErrorState message={telemetry.lastError} />
 			) : null}
-			{actionBar}
+			{isDemo ? actionBar : null}
 
 			<DiffDrawer
 				edge={drawerEdge}

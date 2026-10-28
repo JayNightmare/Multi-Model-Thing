@@ -16,9 +16,12 @@ Public pages need no sign-in. The app lives under `/app` and requires it. Route 
 | `/app/edges`, `/app/edges/:edgeId` | `PayloadDiffIndex`, `PayloadDiff` | Pick an edge and trace; field-by-field diff of expected contract vs. received payload |
 | `/app/events` | `EventLog` | Telemetry backlog from persisted traces plus live frames |
 | `/app/report` | `ReportExport` | Choose a run, strategies, title and notes; export a self-contained HTML report |
-| `/app/account` | `Account` | GitHub profile, session (signed-in and expiry, sign out), preferences (theme, default fuzzer mode), accepted Terms version |
+| `/app/projects` | `Projects` | Create, open and delete projects; the demo is shared |
+| `/app/connect` | `ConnectGuide` | Four-step guide to the MCP server, config snippets, `.mml` folder, tool list |
+| `/connect?code=` | `DeviceApproval` | Check and approve or deny a code shown by an editor (requires sign-in) |
+| `/app/account` | `Account` | GitHub profile, session (signed-in and expiry, sign out), preferences (theme, default fuzzer mode), connected MCP tools with revoke, accepted Terms version |
 
-Old paths (`/edges`, `/events`, `/report`) redirect into `/app`; unknown paths redirect to `/`. Pages are lazy-loaded. `BrowserRouter` is used, so the deploy workflow copies `index.html` to `404.html` to make deep links work on GitHub Pages.
+The app header has a project switcher (`ProjectContext`); the canvas, diff, event log and report pages show the selected project, and the canvas topology comes from the gateway. Old paths (`/edges`, `/events`, `/report`) redirect into `/app`; unknown paths redirect to `/`. Pages are lazy-loaded. `BrowserRouter` is used, so the deploy workflow copies `index.html` to `404.html` to make deep links work on GitHub Pages.
 
 The layout is split in two: `PublicShell` (header with How it works, Terms, Privacy and Sign in or Open app, footer with legal links) wraps the public routes, and `RequireAuth` then `TelemetryProvider` then `AppShell` wraps `/app/*`. The telemetry WebSocket therefore only opens for signed-in app pages.
 

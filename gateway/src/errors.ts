@@ -2,6 +2,8 @@ export type ErrorCode =
 	| "VALIDATION_ERROR"
 	| "UNKNOWN_EDGE"
 	| "UNAUTHORIZED"
+	| "FORBIDDEN"
+	| "CONFLICT"
 	| "RATE_LIMITED"
 	| "NOT_FOUND"
 	| "RUN_IN_PROGRESS"

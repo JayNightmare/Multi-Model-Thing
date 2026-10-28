@@ -9,6 +9,9 @@ describe("safeNext", () => {
 			"/app/edges/synthesizer-decision-engine",
 		);
 		expect(safeNext("/app/report?run=1")).toBe("/app/report?run=1");
+		expect(safeNext("/connect?code=ABCD-EFGH")).toBe(
+			"/connect?code=ABCD-EFGH",
+		);
 	});
 
 	it("falls back to /app for anything else", () => {
@@ -23,6 +26,7 @@ describe("safeNext", () => {
 			"/app//evil.example",
 			"/app\\evil",
 			"/application",
+			"/connectx",
 			"javascript:alert(1)",
 		]) {
 			expect(safeNext(bad)).toBe("/app");

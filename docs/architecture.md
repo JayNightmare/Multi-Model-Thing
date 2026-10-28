@@ -17,11 +17,15 @@ flowchart LR
     G -- "POST /v1/perturb" --> F
     G --> D
     A[External agents] -- "POST /v1/traces" --> C
+    M[mml-mcp<br/>on user machine] -- "HTTPS, Bearer mml_..." --> C
 ```
 
 - The **gateway** owns contracts, run orchestration, persistence and telemetry fan-out.
 - The **fuzzer** is optional. If it is down or errors, the gateway falls back to its own deterministic heuristic fuzzer and marks the trace `fuzzerFallback: true`.
 - The **studio** is a static site. It talks only to the gateway.
+- The **MCP server** ([mcp.md](mcp.md)) runs on the user's machine under their AI assistant. It lets users define contracts for their own agents and run assistant-driven passes; the assistant calls the agents, the gateway generates mutations and judges results. Data is multi-tenant: projects, runs and traces belong to a GitHub login, and the demo project is shared.
+
+Two run modes exist. **Demo runs** (WebSocket `START_TEST_RUN`, flow below) call built-in sample agents inside the gateway. **Assistant-driven runs** (`POST /v1/projects/:id/runs`) hand one case at a time to the user's assistant and record what it reports.
 
 ## A test run, end to end
 
@@ -129,8 +133,15 @@ There is no foreign key by design: DuckDB rejects updates to a parent row that h
 | POST | `/v1/auth/exchange` | public | `{ code }` returns `{ token, expiresAt, tokenType, user }` |
 | POST | `/v1/auth/ws-ticket` | bearer | 30 s ticket for the WebSocket |
 | POST | `/v1/traces` | bearer | Ingest an externally produced payload, validate it, store and broadcast |
-| GET | `/v1/traces?runId&edgeId&limit` | bearer | List traces, newest first (limit 1–1000, default 500) |
-| GET | `/v1/runs` | bearer | Up to 50 runs with per-edge summaries |
+| GET | `/v1/traces?projectId&runId&edgeId&limit` | bearer | List the caller's traces, newest first (limit 1–1000, default 500) |
+| GET | `/v1/runs?projectId` | bearer | Up to 50 of the caller's runs with per-edge summaries |
+| POST | `/v1/device/code`, `/v1/device/token` | public | Device sign-in for MCP clients |
+| GET, POST | `/v1/device/lookup`, `/v1/device/approve` | web session | Studio approval of a device code |
+| GET, DELETE | `/v1/tokens`, `/v1/tokens/:id` | web session | List and revoke MCP tokens |
+| GET, POST, DELETE | `/v1/projects`, `/v1/projects/:id` | bearer | Projects (owner-only, demo is shared) |
+| GET, PUT | `/v1/projects/:id/workflow` | bearer | JSON Schema workflow |
+| GET | `/v1/projects/:id/topology` | bearer | Canvas layout |
+| POST | `/v1/projects/:id/runs`, `/v1/runs/:runId/next`, `/v1/runs/:runId/cases/:caseId/result` | bearer | Assistant-driven runs |
 | WS | `/v1/telemetry?ticket=` | ticket | Live frames and run control |
 
 Errors use `{ "error": { "code", "message", "details?" } }`. Codes: `VALIDATION_ERROR`, `UNKNOWN_EDGE`, `UNAUTHORIZED`, `RATE_LIMITED`, `NOT_FOUND`, `RUN_IN_PROGRESS`, `SERVICE_UNAVAILABLE`, `INTERNAL_ERROR`.

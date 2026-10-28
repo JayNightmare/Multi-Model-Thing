@@ -10,6 +10,11 @@ export const ROUTES = {
 	events: "/app/events",
 	report: "/app/report",
 	account: "/app/account",
+	projects: "/app/projects",
+	/** Guide for connecting your own agents through the MCP server. */
+	connectGuide: "/app/connect",
+	/** Where a signed-in user approves an MCP sign-in request. */
+	connect: "/connect",
 } as const;
 
 export const TERMS_URL =
@@ -21,7 +26,7 @@ export const PRIVACY_URL =
 export function safeNext(next: string | null | undefined): string {
 	if (
 		!next ||
-		!/^\/app(\/[A-Za-z0-9._~!$&'()*+,;=:@%/-]*)?(\?[^#]*)?$/.test(
+		!/^\/(app|connect)(\/[A-Za-z0-9._~!$&'()*+,;=:@%/-]*)?(\?[^#]*)?$/.test(
 			next,
 		) ||
 		next.includes("//") ||

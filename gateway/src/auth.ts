@@ -2,8 +2,47 @@ import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import type { FastifyRequest } from "fastify";
 import { SignJWT, jwtVerify } from "jose";
 import type { AuthConfig, GithubAuthConfig } from "./config.js";
+import { DeviceFlow } from "./device.js";
 import { AppError } from "./errors.js";
 import type { GithubProfile } from "./github.js";
+import type { TokenRepo } from "./storage/tokens.js";
+
+/** Who a request acts as: a web session (jwt), an MCP token (mcp) or dev mode without auth (local). */
+export interface AuthUser {
+	login: string;
+	via: "jwt" | "mcp" | "local";
+	claims?: Record<string, unknown>;
+	tokenId?: string;
+	tokenExpiresAt?: Date;
+}
+
+declare module "fastify" {
+	interface FastifyRequest {
+		user?: AuthUser;
+	}
+}
+
+export const TOKEN_PREFIX = "mml_";
+
+export function generateApiToken(): string {
+	return TOKEN_PREFIX + randomBytes(32).toString("base64url");
+}
+
+export function hashApiToken(token: string): string {
+	return createHash("sha256").update(token).digest("hex");
+}
+
+// MCP tokens are narrower than web sessions: they cannot mint or revoke other tokens.
+const MCP_PATHS = [
+	"/v1/projects",
+	"/v1/runs",
+	"/v1/traces",
+	"/v1/auth/me",
+	"/v1/auth/logout",
+];
+
+const allowedForMcp = (path: string) =>
+	MCP_PATHS.some((p) => path === p || path.startsWith(`${p}/`));
 
 // "api" tokens authorize REST calls, "telemetry" tickets are short-lived and only open the WebSocket,
 // and "oauth-state" binds a GitHub round trip to the browser that started it.
@@ -21,6 +60,8 @@ const PUBLIC_PATHS = new Set([
 	"/v1/auth/exchange",
 	"/v1/auth/github/login",
 	"/v1/auth/github/callback",
+	"/v1/device/code",
+	"/v1/device/token",
 ]);
 
 const sha256 = (value: string) => createHash("sha256").update(value).digest();
@@ -32,6 +73,7 @@ export interface IssuedToken {
 
 export class AuthService {
 	private readonly key: Uint8Array;
+	readonly device = new DeviceFlow();
 	private readonly loginCodes = new Map<
 		string,
 		{ profile: GithubProfile; expiresAt: number }
@@ -151,6 +193,14 @@ export class AuthService {
 			: null;
 	}
 
+	/** Claims of a valid token for the audience, or null. */
+	claims(
+		token: string,
+		audience: TokenAudience,
+	): Promise<Record<string, unknown> | null> {
+		return this.payload(token, audience);
+	}
+
 	private async payload(
 		token: string,
 		audience: TokenAudience,
@@ -168,32 +218,84 @@ export class AuthService {
 	}
 }
 
-export function authHook(auth: AuthService) {
+export function authHook(auth: AuthService, tokens: TokenRepo) {
+	const lastTouch = new Map<string, number>();
+
 	return async (request: FastifyRequest): Promise<void> => {
-		if (!auth.enabled || request.method === "OPTIONS") return;
+		if (request.method === "OPTIONS") return;
+		if (!auth.enabled) {
+			request.user = { login: "local", via: "local" };
+			return;
+		}
 		const path = request.url.split("?")[0] ?? "";
 		if (PUBLIC_PATHS.has(path)) return;
 
-		// Browsers cannot set headers on a WebSocket, so the stream takes a short-lived ticket in the query.
-		const isStream = path === "/v1/telemetry";
-		const token = isStream
-			? (request.query as { ticket?: string }).ticket
-			: /^Bearer (.+)$/.exec(
-					request.headers.authorization ?? "",
-				)?.[1];
-
-		if (
-			!token ||
-			!(await auth.verify(
-				token,
-				isStream ? "telemetry" : "api",
-			))
-		) {
-			throw new AppError(
+		const unauthorized = () =>
+			new AppError(
 				"UNAUTHORIZED",
 				"Missing or invalid token",
 				401,
 			);
+
+		// Browsers cannot set headers on a WebSocket, so the stream takes a short-lived ticket in the query.
+		if (path === "/v1/telemetry") {
+			const ticket = (request.query as { ticket?: string })
+				.ticket;
+			const claims = ticket
+				? await auth.claims(ticket, "telemetry")
+				: null;
+			if (!claims || typeof claims.sub !== "string")
+				throw unauthorized();
+			request.user = { login: claims.sub, via: "jwt" };
+			return;
 		}
+
+		const token = /^Bearer (.+)$/.exec(
+			request.headers.authorization ?? "",
+		)?.[1];
+		if (!token) throw unauthorized();
+
+		if (token.startsWith(TOKEN_PREFIX)) {
+			const stored = await tokens.findByHash(
+				hashApiToken(token),
+			);
+			if (
+				!stored ||
+				stored.revoked ||
+				stored.expiresAt.getTime() <= Date.now()
+			) {
+				throw unauthorized();
+			}
+			if (!allowedForMcp(path)) {
+				throw new AppError(
+					"FORBIDDEN",
+					"This token cannot access that endpoint",
+					403,
+				);
+			}
+			request.user = {
+				login: stored.login,
+				via: "mcp",
+				tokenId: stored.tokenId,
+				tokenExpiresAt: stored.expiresAt,
+			};
+			// Recording last use on every call would write constantly, so once a minute is enough.
+			const now = Date.now();
+			if (
+				now - (lastTouch.get(stored.tokenId) ?? 0) >
+				60_000
+			) {
+				lastTouch.set(stored.tokenId, now);
+				void tokens
+					.touch(stored.tokenId)
+					.catch(() => undefined);
+			}
+			return;
+		}
+
+		const claims = await auth.claims(token, "api");
+		if (!claims || typeof claims.sub !== "string")
+			throw unauthorized();
+		request.user = { login: claims.sub, via: "jwt", claims };
 	};
 }

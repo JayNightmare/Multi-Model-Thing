@@ -10,6 +10,7 @@ import {
 	MenuList,
 	MenuPopover,
 	MenuTrigger,
+	Select,
 	Subtitle2,
 	Tab,
 	TabList,
@@ -21,7 +22,9 @@ import {
 	ArrowDownloadRegular,
 	ArrowSwapRegular,
 	DocumentRegular,
+	FolderRegular,
 	GridRegular,
+	LinkRegular,
 	PersonRegular,
 	PlugConnectedRegular,
 	PlugDisconnectedRegular,
@@ -34,6 +37,7 @@ import type { ReactNode } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { api } from "../api";
 import { useAuth } from "../hooks/AuthContext";
+import { useProject } from "../hooks/ProjectContext";
 import { useTelemetry } from "../hooks/TelemetryContext";
 import { useAsync } from "../hooks/useAsync";
 import { ROUTES } from "../lib/routes";
@@ -131,6 +135,16 @@ const NAV = [
 		label: "Report Export",
 		icon: <ArrowDownloadRegular />,
 	},
+	{
+		value: ROUTES.projects,
+		label: "Projects",
+		icon: <FolderRegular />,
+	},
+	{
+		value: ROUTES.connectGuide,
+		label: "Connect agents",
+		icon: <LinkRegular />,
+	},
 ];
 
 // Empty on pages without a tab (the account page) so no tab appears selected.
@@ -138,6 +152,9 @@ function activeNav(pathname: string): string {
 	if (pathname.startsWith(ROUTES.edges)) return ROUTES.edges;
 	if (pathname.startsWith(ROUTES.events)) return ROUTES.events;
 	if (pathname.startsWith(ROUTES.report)) return ROUTES.report;
+	if (pathname.startsWith(ROUTES.projects)) return ROUTES.projects;
+	if (pathname.startsWith(ROUTES.connectGuide))
+		return ROUTES.connectGuide;
 	if (pathname.startsWith(ROUTES.account)) return "";
 	return ROUTES.app;
 }
@@ -173,6 +190,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 	const { pathname } = useLocation();
 	const { isConnected } = useTelemetry();
 	const { user, required, signOut } = useAuth();
+	const { projects, projectId, select } = useProject();
 	const reduceMotion = useReducedMotion();
 
 	return (
@@ -188,6 +206,30 @@ export function AppShell({ children }: { children: ReactNode }) {
 					<Subtitle2>Contract Tester</Subtitle2>
 				</Link>
 				<div className={styles.actions}>
+					<Select
+						size="small"
+						aria-label="Project"
+						value={projectId}
+						onChange={(_, d) => {
+							select(d.value);
+							navigate(ROUTES.app);
+						}}
+					>
+						{projects.map((p) => (
+							<option
+								key={
+									p.projectId
+								}
+								value={
+									p.projectId
+								}
+							>
+								{p.isDemo
+									? `${p.name} (demo)`
+									: p.name}
+							</option>
+						))}
+					</Select>
 					<span className={styles.live}>
 						{isConnected ? (
 							<PlugConnectedRegular />

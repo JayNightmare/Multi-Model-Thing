@@ -12,16 +12,18 @@
 | `LOG_LEVEL` | gateway | `info` | `silent` disables logging |
 | `AUTH_PASSWORD` | gateway | unset | optional shared password (for scripts); unset disables password login |
 | `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET` | gateway | unset | GitHub OAuth App credentials; setting the id enables GitHub sign-in |
-| `GITHUB_ALLOWED_USERS` | gateway | unset | comma-separated GitHub logins; required with GitHub sign-in |
+| `GITHUB_ALLOWED_USERS` | gateway | unset | required with GitHub sign-in: `*` allows any GitHub account, otherwise comma-separated logins |
 | `PUBLIC_URL` | gateway | unset | public gateway URL; the OAuth callback is `PUBLIC_URL/v1/auth/github/callback` |
 | `STUDIO_URL` | gateway | unset | studio origin the browser returns to after sign-in |
 | `JWT_SECRET` | gateway | unset | at least 32 chars; required when any auth method is enabled |
 | `LEGAL_VERSION` | gateway | `1` | version of the Terms and Privacy Policy; bump it when they change so users re-accept at sign-in |
 | `JWT_TTL_SECONDS` | gateway | 3600 | integer, minimum 60 |
+| `MCP_TOKEN_TTL_DAYS` | gateway | 30 | lifetime of tokens issued to MCP clients; users can revoke them on the Account page |
 | `TRUST_PROXY` | gateway | false | set `true` behind Caddy so rate limiting sees client IPs |
 | `FUZZER_MODEL_PATH` | fuzzer | `./models/model.gguf` | missing file means mock mode |
 | `N_CTX`, `N_GPU_LAYERS` | fuzzer | 4096, -1 | llama.cpp settings |
 | `VITE_GATEWAY_URL` | studio (build time) | empty | repo variable for the Pages workflow |
+| `MML_API_URL`, `MML_HOME`, `MML_WORKSPACE` | mcp (user machine) | `https://gateway.nexusgit.info`, `~/.mml`, cwd | see [mcp.md](mcp.md) |
 | `GATEWAY_PROXY_URL` | studio dev server | `http://localhost:8000` | |
 | `GATEWAY_DOMAIN`, `GATEWAY_UPSTREAM` | Caddy | `gateway.nexusgit.info`, `127.0.0.1:8000` | |
 
@@ -56,11 +58,11 @@ flowchart LR
 
 ## Security notes
 
-- Sign-in is GitHub OAuth with a mandatory allowlist (`GITHUB_ALLOWED_USERS`); everyone on the list has the same access. There are no roles. Successful and refused sign-ins are logged by GitHub login. A shared `AUTH_PASSWORD` is optional and meant for scripts only.
+- Sign-in is GitHub OAuth. `GITHUB_ALLOWED_USERS` is either a list of logins or `*` (any GitHub account); each user sees only their own projects and runs, and the demo is shared. There are no roles. Successful and refused sign-ins are logged by GitHub login. A shared `AUTH_PASSWORD` is optional and meant for scripts only.
 - The gateway and fuzzer listen on loopback only; only Caddy is public. Do not publish the fuzzer, it has no authentication.
 - Use a specific `CORS_ORIGIN`, never `*`, when auth is on.
 - Machine clients that post traces need `AUTH_PASSWORD` set, then log in and send `Authorization: Bearer <token>`; the token expires after `JWT_TTL_SECONDS`.
-- Revoking a user means removing them from `GITHUB_ALLOWED_USERS` and restarting; tokens already issued stay valid until they expire (at most `JWT_TTL_SECONDS`). Rotating `JWT_SECRET` invalidates all tokens at once.
+- Revoking a user (restricted list only) means removing them from `GITHUB_ALLOWED_USERS` and restarting; tokens already issued stay valid until they expire (at most `JWT_TTL_SECONDS`). Rotating `JWT_SECRET` invalidates all tokens at once.
 - The login rate limiter, failure counters and pending login codes are in memory per process and reset on restart.
 - Trace payloads are stored verbatim. Do not send real personal or secret data through the harness.
 - `.env` and `.copilot-azure/` are git-ignored; keep secrets out of `ecosystem.config.cjs`.
@@ -73,9 +75,9 @@ flowchart LR
 | pm2 shows the gateway `online` but nothing listens and logs are empty | Under pm2 `process.argv[1]` is pm2's wrapper, so the "am I the entry point" check failed. Fixed by also checking `pm_id`; rebuild (`npm --prefix gateway run build`) after pulling |
 | Ports or env changes in `ecosystem.config.cjs` have no effect | `pm2 restart` reuses the environment saved at first start. Use `pm2 delete gateway fuzzer && pm2 start ecosystem.config.cjs && pm2 save` (or `restart --update-env`) |
 | Gateway crashes at start with "JWT_SECRET must be at least 32 characters" | An auth method is enabled without a long enough `JWT_SECRET` |
-| Gateway crashes at start with "GITHUB_ALLOWED_USERS must list at least one login" (or a missing `GITHUB_CLIENT_SECRET`, `PUBLIC_URL`, `STUDIO_URL`) | GitHub sign-in is enabled with incomplete settings |
+| Gateway crashes at start with "GITHUB_ALLOWED_USERS must list at least one login, or \"*\"" (or a missing `GITHUB_CLIENT_SECRET`, `PUBLIC_URL`, `STUDIO_URL`) | GitHub sign-in is enabled with incomplete settings |
 | GitHub shows "redirect_uri is not associated with this application" | The OAuth App's callback URL differs from `<PUBLIC_URL>/v1/auth/github/callback` |
-| Studio returns to the sign-in card with "That GitHub account is not allowed" | The login is not in `GITHUB_ALLOWED_USERS` |
+| Studio returns to the sign-in card with "That GitHub account is not allowed" | The login is not in `GITHUB_ALLOWED_USERS` (set it to `*` to open sign-in) |
 | Studio shows "You need to accept the Terms and Privacy Policy" | Sign-in was started without the checkbox, or the studio and gateway disagree on `LEGAL_VERSION` (the studio reads it from `/v1/auth/status`, so reload the page) |
 | Terms or Privacy page is blank | The legal site must allow embedding from the studio origin (`frame-ancestors` / `X-Frame-Options`); the page offers an open-in-new-tab link as a fallback |
 | Studio shows "could not be verified" after GitHub | The `oauth_nonce` cookie was not sent back: callback host differs from the login host, cookies blocked, or the flow took longer than 10 min |

@@ -1,0 +1,33 @@
+{
+	"name": "@nexusgit/mml-mcp",
+	"version": "0.1.0",
+	"description": "MCP server for Contract Tester: define contracts for your own agents, let your assistant run adversarial hand-off tests, and see results in the studio",
+	"type": "module",
+	"bin": {
+		"mml-mcp": "dist/index.js"
+	},
+	"main": "dist/index.js",
+	"files": [
+		"dist"
+	],
+	"engines": {
+		"node": ">=20"
+	},
+	"scripts": {
+		"build": "tsc -p tsconfig.json",
+		"dev": "tsx src/index.ts",
+		"typecheck": "tsc -p tsconfig.json --noEmit",
+		"test": "vitest run",
+		"prepublishOnly": "npm run build"
+	},
+	"dependencies": {
+		"@modelcontextprotocol/sdk": "^1.20.0",
+		"zod": "^3.25.76"
+	},
+	"devDependencies": {
+		"@types/node": "^26.6.5",
+		"tsx": "^4.23.15",
+		"typescript": "^7.0.2",
+		"vitest": "^5.0.5"
+	}
+}

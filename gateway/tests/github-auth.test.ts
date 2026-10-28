@@ -109,6 +109,11 @@ describe("loadConfig github", () => {
 		]);
 		expect(github?.studioUrl).toBe("https://studio.test");
 	});
+
+	it("treats * as any GitHub account", () => {
+		const { github } = loadConfig({ ...ENV, GITHUB_ALLOWED_USERS: "*" }).auth;
+		expect(github?.allowedUsers).toBeNull();
+	});
 });
 
 describe("GitHub sign-in", () => {
@@ -117,6 +122,7 @@ describe("GitHub sign-in", () => {
 		expect(res.json()).toEqual({
 			required: true,
 			legalVersion: "1",
+			studioUrl: "https://studio.test",
 			methods: { github: true, password: false },
 		});
 		const login = await app.inject({

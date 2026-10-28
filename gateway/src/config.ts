@@ -1,8 +1,8 @@
 export interface GithubAuthConfig {
 	clientId: string;
 	clientSecret: string;
-	/** Lower-cased GitHub logins allowed to sign in. */
-	allowedUsers: string[];
+	/** Lower-cased GitHub logins allowed to sign in, or null when any GitHub account may. */
+	allowedUsers: string[] | null;
 	/** Public base URL of this gateway; the OAuth callback lives under it. */
 	publicUrl: string;
 	/** Where the browser is sent after sign-in. */
@@ -21,6 +21,8 @@ export interface AppConfig {
 	auth: AuthConfig;
 	/** Bump when the Terms or Privacy Policy change; users must accept the new version at sign-in. */
 	legalVersion: string;
+	/** Lifetime of tokens issued to MCP clients through the device flow. */
+	mcpTokenTtlDays: number;
 	trustProxy: boolean;
 	port: number;
 	host: string;
@@ -68,16 +70,17 @@ function loadGithubConfig(env: NodeJS.ProcessEnv): GithubAuthConfig | null {
 		.split(",")
 		.map((u) => u.trim().toLowerCase())
 		.filter(Boolean);
-	// Without an allowlist any GitHub account could sign in.
+	const openSignIn = allowedUsers.includes("*");
+	// An empty list must not silently open sign-in; it takes an explicit "*".
 	if (allowedUsers.length === 0) {
 		throw new Error(
-			"GITHUB_ALLOWED_USERS must list at least one login",
+			'GITHUB_ALLOWED_USERS must list at least one login, or "*" to allow any GitHub account',
 		);
 	}
 	return {
 		clientId,
 		clientSecret,
-		allowedUsers,
+		allowedUsers: openSignIn ? null : allowedUsers,
 		publicUrl: requireUrl(env, "PUBLIC_URL"),
 		studioUrl: requireUrl(env, "STUDIO_URL"),
 	};
@@ -111,6 +114,14 @@ function loadAuthConfig(env: NodeJS.ProcessEnv): AuthConfig {
 	return { enabled: true, password, github, jwtSecret, ttlSeconds };
 }
 
+function parseTtlDays(raw: string | undefined): number {
+	const days = Number(raw ?? 30);
+	if (!Number.isInteger(days) || days < 1 || days > 365) {
+		throw new Error(`Invalid MCP_TOKEN_TTL_DAYS "${raw}"`);
+	}
+	return days;
+}
+
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
 	const port = Number(env.PORT ?? 8000);
 	if (!Number.isInteger(port) || port < 0 || port > 65535) {
@@ -119,6 +130,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
 	return {
 		auth: loadAuthConfig(env),
 		legalVersion: env.LEGAL_VERSION?.trim() || "1",
+		mcpTokenTtlDays: parseTtlDays(env.MCP_TOKEN_TTL_DAYS),
 		trustProxy: env.TRUST_PROXY === "true",
 		port,
 		host: env.HOST ?? "0.0.0.0",

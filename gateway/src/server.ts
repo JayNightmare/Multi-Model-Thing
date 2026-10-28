@@ -5,15 +5,19 @@ import Fastify, { type FastifyInstance } from "fastify";
 import { AuthService, authHook } from "./auth.js";
 import { loadConfig, type AppConfig } from "./config.js";
 import type { AppContext } from "./context.js";
+import { ContractRegistry } from "./contracts/registry.js";
 import { AppError, errorBody } from "./errors.js";
 import { HeuristicFuzzer } from "./fuzzers/heuristic.js";
 import { SemanticLocalFuzzer } from "./fuzzers/semantic.js";
 import { openApiSpec } from "./openapi.js";
 import { authRoutes } from "./routes/auth.js";
+import { deviceRoutes } from "./routes/device.js";
 import { healthRoutes } from "./routes/health.js";
+import { projectRoutes } from "./routes/projects.js";
 import { telemetryRoutes } from "./routes/telemetry.js";
 import { traceRoutes } from "./routes/traces.js";
 import { TelemetryBroadcaster } from "./services/broadcaster.js";
+import { ProjectRunService } from "./services/project-run-service.js";
 import { RunService, type FuzzerFactory } from "./services/run-service.js";
 import { DuckDbTraceStore, type TraceStore } from "./storage/duckdb.js";
 
@@ -61,16 +65,27 @@ export async function buildServer(
 		createFuzzers,
 		log: app.log,
 	});
+	const registry = new ContractRegistry();
+	const projectRuns = new ProjectRunService({
+		store,
+		broadcaster,
+		registry,
+		createFuzzers,
+		log: app.log,
+	});
 	const ctx: AppContext = {
 		config,
 		auth: new AuthService(config.auth, options.fetch),
 		store,
 		broadcaster,
 		runService,
+		projectRuns,
+		registry,
 		semanticFuzzer,
 	};
 
 	app.addHook("onClose", async () => {
+		projectRuns.close();
 		broadcaster.destroy();
 		await store.close();
 	});
@@ -122,11 +137,13 @@ export async function buildServer(
 
 	await app.register(cors, { origin: config.corsOrigins });
 	// Registered after cors so 401s still carry CORS headers.
-	app.addHook("onRequest", authHook(ctx.auth));
+	app.addHook("onRequest", authHook(ctx.auth, store.tokens));
 	await app.register(fastifyWebsocket);
 
 	app.get("/openapi.json", async () => openApiSpec);
 	await app.register(authRoutes, { ctx });
+	await app.register(deviceRoutes, { ctx });
+	await app.register(projectRoutes, { ctx });
 	await app.register(healthRoutes, { ctx });
 	await app.register(traceRoutes, { ctx });
 	await app.register(telemetryRoutes, { ctx });

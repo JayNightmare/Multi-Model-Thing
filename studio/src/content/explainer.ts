@@ -123,6 +123,25 @@ export const EXAMPLES: Example[] = [
 	},
 ];
 
+export const OWN_AGENT_STEPS: { title: string; body: string }[] = [
+	{
+		title: "Add the MCP server",
+		body: "Add a small local MCP server to your editor. It works with VS Code, Claude Desktop, Cursor and other MCP clients.",
+	},
+	{
+		title: "Sign in with GitHub",
+		body: "Your assistant shows a link and a code. You approve them here, and the server stores a revocable token in your home folder.",
+	},
+	{
+		title: "Define contracts",
+		body: "The assistant finds your agents, drafts a JSON Schema for each hand-off from sample payloads, and saves them to a .mml folder in your repository.",
+	},
+	{
+		title: "Run and review",
+		body: "The assistant sends each case to your real agents and reports the outcome. Results appear in your private project here, live.",
+	},
+];
+
 export interface FaqItem {
 	q: string;
 	a: string;
@@ -135,7 +154,15 @@ export const FAQ: FaqItem[] = [
 	},
 	{
 		q: "What workflow does the studio test?",
-		a: "A three-hand-off sample claims workflow (extract, synthesize, decide, audit) ships with the studio so you can see every verdict type. External agents can report real payloads to the gateway for contract validation.",
+		a: "A built-in claims workflow (extract, synthesize, decide, audit) lets you see every verdict type straight away. To test your own agents, connect your AI assistant through the MCP server and define contracts for your own hand-offs.",
+	},
+	{
+		q: "Does the MCP server run my code?",
+		a: "No. Your assistant calls your agents with the payloads Contract Tester prepares, and reports what happened. The MCP server only talks to your assistant and to the gateway, and writes a .mml folder with non-secret context to your workspace.",
+	},
+	{
+		q: "Where is my sign-in token kept?",
+		a: "In ~/.mml/credentials.json in your home folder, readable only by you, never in the workspace. You can see and revoke every connected tool on your account page.",
 	},
 	{
 		q: "What is the difference between heuristic and semantic mode?",
@@ -147,7 +174,7 @@ export const FAQ: FaqItem[] = [
 	},
 	{
 		q: "Who can sign in?",
-		a: "Access is limited to an allowlist of GitHub accounts. You sign in with GitHub; the studio only reads your public profile.",
+		a: "Anyone with a GitHub account. You sign in with GitHub; the studio only reads your public profile. Your projects, runs and results are visible only to you.",
 	},
 	{
 		q: "What do you store?",

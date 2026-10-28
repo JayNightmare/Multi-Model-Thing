@@ -6,7 +6,10 @@ import type {
 	TraceRecord,
 } from "../contracts/interceptor.js";
 import type { ContractViolation, FuzzerMode } from "../contracts/schemas.js";
+import { ISO, type Db, type Row } from "./db.js";
 import { migrateUp } from "./migrate.js";
+import { ProjectRepo } from "./projects.js";
+import { TokenRepo } from "./tokens.js";
 
 export type EdgeHealth = "green" | "amber" | "red";
 
@@ -55,6 +58,15 @@ export interface StoredTrace {
 export interface TraceQuery {
 	runId?: string;
 	edgeId?: string;
+	projectId?: string;
+	/** Limits results to runs started by this user (plus legacy runs with no owner). */
+	viewer?: string;
+	limit?: number;
+}
+
+export interface RunQuery {
+	projectId?: string;
+	viewer?: string;
 	limit?: number;
 }
 
@@ -64,6 +76,8 @@ export interface TermsAcceptance {
 }
 
 export interface TraceStore {
+	readonly projects: ProjectRepo;
+	readonly tokens: TokenRepo;
 	init(): Promise<void>;
 	ping(): Promise<boolean>;
 	createRun(run: {
@@ -72,12 +86,20 @@ export interface TraceStore {
 		fuzzerMode: FuzzerMode;
 		startedAt: string;
 		seed?: string;
+		projectId: string;
+		ownerLogin: string | null;
 	}): Promise<void>;
-	ensureRun(runId: string, fuzzerMode: FuzzerMode): Promise<void>;
+	/** False when the run id already belongs to another project or user. */
+	ensureRun(
+		runId: string,
+		fuzzerMode: FuzzerMode,
+		projectId: string,
+		ownerLogin: string,
+	): Promise<boolean>;
 	saveTrace(trace: TraceRecord): Promise<void>;
 	completeRun(runId: string, completedAt: string): Promise<void>;
 	listTraces(query: TraceQuery): Promise<StoredTrace[]>;
-	listRuns(limit?: number): Promise<RunSummary[]>;
+	listRuns(query?: RunQuery): Promise<RunSummary[]>;
 	recordAcceptance(login: string, version: string): Promise<void>;
 	latestAcceptance(login: string): Promise<TermsAcceptance | null>;
 	close(): Promise<void>;
@@ -92,8 +114,6 @@ export function classifyEdgeHealth(
 	return "green";
 }
 
-type Row = Record<string, unknown>;
-
 // Share of contract violations the downstream agent survived; 100 when nothing was violated.
 export function recoveryRate(recovered: number, violations: number): number {
 	return violations > 0
@@ -104,10 +124,12 @@ export function recoveryRate(recovered: number, violations: number): number {
 const parseJson = (value: unknown): unknown =>
 	typeof value === "string" ? JSON.parse(value) : value;
 
-export class DuckDbTraceStore implements TraceStore {
+export class DuckDbTraceStore implements TraceStore, Db {
 	private instance?: DuckDBInstance;
 	private connection?: DuckDBConnection;
 	private queue: Promise<unknown> = Promise.resolve();
+	readonly projects = new ProjectRepo(this);
+	readonly tokens = new TokenRepo(this);
 
 	constructor(private readonly path: string) {}
 
@@ -117,6 +139,7 @@ export class DuckDbTraceStore implements TraceStore {
 		this.instance = await DuckDBInstance.create(this.path);
 		this.connection = await this.instance.connect();
 		await migrateUp(this.connection);
+		await this.projects.seedDemo();
 	}
 
 	async ping(): Promise<boolean> {
@@ -134,32 +157,49 @@ export class DuckDbTraceStore implements TraceStore {
 		fuzzerMode: FuzzerMode;
 		startedAt: string;
 		seed?: string;
+		projectId: string;
+		ownerLogin: string | null;
 	}): Promise<void> {
 		await this.exec(
-			"INSERT INTO workflow_runs (run_id, workflow_name, fuzzer_mode, started_at, seed) VALUES (?, ?, ?, CAST(? AS TIMESTAMP), ?)",
+			"INSERT INTO workflow_runs (run_id, workflow_name, fuzzer_mode, started_at, seed, project_id, owner_login) VALUES (?, ?, ?, CAST(? AS TIMESTAMP), ?, ?, ?)",
 			[
 				run.runId,
 				run.workflowName,
 				run.fuzzerMode,
 				run.startedAt,
 				run.seed ?? null,
+				run.projectId,
+				run.ownerLogin,
 			],
 		);
 	}
 
-	async ensureRun(runId: string, fuzzerMode: FuzzerMode): Promise<void> {
-		const rows = await this.query(
-			"SELECT run_id FROM workflow_runs WHERE run_id = ?",
+	async ensureRun(
+		runId: string,
+		fuzzerMode: FuzzerMode,
+		projectId: string,
+		ownerLogin: string,
+	): Promise<boolean> {
+		const [existing] = await this.query(
+			"SELECT project_id, owner_login FROM workflow_runs WHERE run_id = ?",
 			[runId],
 		);
-		if (rows.length === 0) {
-			await this.createRun({
-				runId,
-				workflowName: "ingested",
-				fuzzerMode,
-				startedAt: new Date().toISOString(),
-			});
+		if (existing) {
+			return (
+				existing.project_id === projectId &&
+				(existing.owner_login === ownerLogin ||
+					existing.owner_login === null)
+			);
 		}
+		await this.createRun({
+			runId,
+			workflowName: "ingested",
+			fuzzerMode,
+			startedAt: new Date().toISOString(),
+			projectId,
+			ownerLogin,
+		});
+		return true;
 	}
 
 	async saveTrace(t: TraceRecord): Promise<void> {
@@ -227,6 +267,16 @@ export class DuckDbTraceStore implements TraceStore {
 			where.push("edge_id = ?");
 			params.push(query.edgeId);
 		}
+		if (query.projectId) {
+			const owned = query.viewer
+				? " AND (owner_login = ? OR owner_login IS NULL)"
+				: "";
+			where.push(
+				`run_id IN (SELECT run_id FROM workflow_runs WHERE project_id = ?${owned})`,
+			);
+			params.push(query.projectId);
+			if (query.viewer) params.push(query.viewer);
+		}
 		params.push(query.limit ?? 500);
 
 		const rows = await this.query(
@@ -263,15 +313,30 @@ export class DuckDbTraceStore implements TraceStore {
 		}));
 	}
 
-	async listRuns(limit = 50): Promise<RunSummary[]> {
+	async listRuns(query: RunQuery = {}): Promise<RunSummary[]> {
+		const where: string[] = [];
+		const params: (string | number)[] = [];
+		if (query.projectId) {
+			where.push("project_id = ?");
+			params.push(query.projectId);
+			if (query.viewer) {
+				where.push(
+					"(owner_login = ? OR owner_login IS NULL)",
+				);
+				params.push(query.viewer);
+			}
+		}
+		params.push(query.limit ?? 50);
 		const runs = await this.query(
-			`SELECT run_id, workflow_name, fuzzer_mode, seed, strftime(started_at, '%Y-%m-%dT%H:%M:%S.%gZ') AS started_at,
-              strftime(completed_at, '%Y-%m-%dT%H:%M:%S.%gZ') AS completed_at, total_mutations, broken_contracts, recovery_rate
-       FROM workflow_runs ORDER BY started_at DESC LIMIT ?`,
-			[limit],
+			`SELECT run_id, workflow_name, fuzzer_mode, seed, strftime(started_at, ${ISO}) AS started_at,
+              strftime(completed_at, ${ISO}) AS completed_at, total_mutations, broken_contracts, recovery_rate
+       FROM workflow_runs ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
+       ORDER BY started_at DESC LIMIT ?`,
+			params,
 		);
 		if (runs.length === 0) return [];
 
+		const ids = runs.map((r) => String(r.run_id));
 		const edgeRows = await this.query(
 			`SELECT run_id, edge_id,
               CAST(COUNT(*) AS INTEGER) AS total,
@@ -279,7 +344,9 @@ export class DuckDbTraceStore implements TraceStore {
               CAST(SUM(CASE WHEN contract_violated THEN 1 ELSE 0 END) AS INTEGER) AS violations,
               CAST(SUM(CASE WHEN contract_violated AND downstream_status <> 'FAILED' THEN 1 ELSE 0 END) AS INTEGER) AS recovered,
               CAST(SUM(CASE WHEN downstream_status = 'FAILED' THEN 1 ELSE 0 END) AS INTEGER) AS breached
-       FROM mutation_traces GROUP BY run_id, edge_id ORDER BY edge_id`,
+       FROM mutation_traces WHERE run_id IN (${ids.map(() => "?").join(", ")})
+       GROUP BY run_id, edge_id ORDER BY edge_id`,
+			ids,
 		);
 
 		return runs.map((r) => ({
@@ -350,7 +417,7 @@ export class DuckDbTraceStore implements TraceStore {
 		return next;
 	}
 
-	private async exec(sql: string, params: unknown[] = []): Promise<void> {
+	async exec(sql: string, params: unknown[] = []): Promise<void> {
 		await this.enqueue(async () => {
 			await this.requireConnection().run(
 				sql,
@@ -359,10 +426,20 @@ export class DuckDbTraceStore implements TraceStore {
 		});
 	}
 
-	private async query(
-		sql: string,
-		params: unknown[] = [],
-	): Promise<Row[]> {
+	async batch(
+		fn: (
+			run: (sql: string, params?: unknown[]) => Promise<void>,
+		) => Promise<void>,
+	): Promise<void> {
+		await this.enqueue(async () => {
+			const conn = this.requireConnection();
+			await fn(async (sql, params = []) => {
+				await conn.run(sql, params as never);
+			});
+		});
+	}
+
+	async query(sql: string, params: unknown[] = []): Promise<Row[]> {
 		return this.enqueue(async () => {
 			const reader =
 				await this.requireConnection().runAndReadAll(

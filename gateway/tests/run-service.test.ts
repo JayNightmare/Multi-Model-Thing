@@ -60,16 +60,21 @@ describe("RunService", () => {
 		const first = await service.start({
 			fuzzerMode: "heuristic",
 			seed: "replay-me",
+			owner: "tester",
 		});
 		const second = await service.start({
 			fuzzerMode: "heuristic",
 			seed: "replay-me",
+			owner: "tester",
 		});
 
 		expect(
 			payloads(await store.listTraces({ runId: first })),
 		).toEqual(payloads(await store.listTraces({ runId: second })));
-		const runs = await store.listRuns();
+		const runs = await store.listRuns({
+			projectId: "demo",
+			viewer: "tester",
+		});
 		expect(runs.map((r) => r.seed)).toEqual([
 			"replay-me",
 			"replay-me",
@@ -81,14 +86,20 @@ describe("RunService", () => {
 
 	it("persists a recovery rate of recovered / violations", async () => {
 		const { store, broadcaster, service } = await makeService();
-		const runId = await service.start({ fuzzerMode: "heuristic" });
+		const runId = await service.start({
+			fuzzerMode: "heuristic",
+			owner: "tester",
+		});
 		const traces = await store.listTraces({ runId });
 		const violated = traces.filter((t) => t.contractViolated);
 		const recovered = violated.filter(
 			(t) => t.downstreamStatus !== "FAILED",
 		);
 
-		const [run] = await store.listRuns();
+		const [run] = await store.listRuns({
+			projectId: "demo",
+			viewer: "tester",
+		});
 		expect(run.seed).toBe(runId);
 		expect(run.recoveryRate).toBe(
 			recoveryRate(recovered.length, violated.length),

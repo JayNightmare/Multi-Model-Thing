@@ -3,8 +3,14 @@ import { useTelemetrySocket, type TelemetryState } from "./useTelemetrySocket";
 
 const TelemetryContext = createContext<TelemetryState | null>(null);
 
-export function TelemetryProvider({ children }: { children: ReactNode }) {
-	const state = useTelemetrySocket();
+export function TelemetryProvider({
+	projectId,
+	children,
+}: {
+	projectId: string;
+	children: ReactNode;
+}) {
+	const state = useTelemetrySocket(projectId);
 	return (
 		<TelemetryContext.Provider value={state}>
 			{children}

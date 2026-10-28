@@ -14,7 +14,12 @@ import {
 } from "@fluentui/react-components";
 import { Link, useNavigate } from "react-router-dom";
 import { CardGrid, InfoCard, Section } from "../components/PublicBits";
-import { MUTATIONS, SAMPLE_EDGES, VERDICTS } from "../content/explainer";
+import {
+	MUTATIONS,
+	OWN_AGENT_STEPS,
+	SAMPLE_EDGES,
+	VERDICTS,
+} from "../content/explainer";
 import { useAuth } from "../hooks/AuthContext";
 import { useDocumentTitle } from "../hooks/useDocumentTitle";
 import { ROUTES } from "../lib/routes";
@@ -270,6 +275,50 @@ export default function HowItWorks() {
 				</Body1>
 			</Section>
 
+			<Section
+				id="own-agents"
+				title="Testing your own agents"
+				lead="A local MCP server connects your AI assistant to Contract Tester. The assistant drives the loop; the gateway plans the cases and judges the results."
+			>
+				<CardGrid>
+					{OWN_AGENT_STEPS.map((s, i) => (
+						<InfoCard
+							key={s.title}
+							title={s.title}
+							step={i + 1}
+						>
+							<Body1>{s.body}</Body1>
+						</InfoCard>
+					))}
+				</CardGrid>
+				<ul className={styles.list}>
+					<li>
+						For each case the gateway sends
+						the assistant a baseline or
+						mutated payload and the contract
+						verdict.
+					</li>
+					<li>
+						The assistant sends it to your
+						real agent, unchanged, and
+						reports whether the agent
+						handled it or failed.
+					</li>
+					<li>
+						The gateway derives the verdict
+						(handled, recovered, bypassed or
+						breach), stores the trace and
+						streams it to your project.
+					</li>
+					<li>
+						Contracts are JSON Schema,
+						stored in your workspace under{" "}
+						<code>.mml/workflow.json</code>{" "}
+						and in your project here.
+					</li>
+				</ul>
+			</Section>
+
 			<Section id="studio" title="Inside the studio">
 				<CardGrid>
 					<InfoCard title="Contract canvas">
@@ -309,9 +358,12 @@ export default function HowItWorks() {
 			<Section id="limits" title="Good to know">
 				<ul className={styles.list}>
 					<li>
-						The studio ships with one sample
-						workflow; it does not run
-						arbitrary code you upload.
+						The demo project runs a built-in
+						sample workflow. Your own
+						projects are private to you and
+						are tested through your
+						assistant; the studio never runs
+						code you upload.
 					</li>
 					<li>
 						Payloads in traces are stored as

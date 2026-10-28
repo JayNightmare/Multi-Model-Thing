@@ -84,6 +84,7 @@ export const authRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (
 	app.get("/v1/auth/status", async () => ({
 		required: auth.enabled,
 		legalVersion: ctx.config.legalVersion,
+		studioUrl: github?.studioUrl ?? null,
 		methods: {
 			github: github !== null,
 			password: auth.passwordEnabled,
@@ -92,7 +93,15 @@ export const authRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (
 
 	// The studio shows who is signed in; the profile comes from claims set at sign-in.
 	app.get("/v1/auth/me", async (request) => {
-		if (!auth.enabled) {
+		const user = request.user;
+		if (!user) {
+			throw new AppError(
+				"UNAUTHORIZED",
+				"Missing or invalid token",
+				401,
+			);
+		}
+		if (user.via === "local") {
 			return {
 				login: "local",
 				name: null,
@@ -103,24 +112,29 @@ export const authRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (
 				terms: null,
 			};
 		}
-		const token = /^Bearer (.+)$/.exec(
-			request.headers.authorization ?? "",
-		)?.[1];
-		const claims = token ? await auth.apiClaims(token) : null;
-		if (!claims || typeof claims.sub !== "string") {
-			throw new AppError(
-				"UNAUTHORIZED",
-				"Missing or invalid token",
-				401,
-			);
+		if (user.via === "mcp") {
+			return {
+				login: user.login,
+				name: null,
+				avatarUrl: null,
+				method: "mcp",
+				issuedAt: null,
+				expiresAt:
+					user.tokenExpiresAt?.toISOString() ??
+					null,
+				terms: await ctx.store.latestAcceptance(
+					user.login,
+				),
+			};
 		}
+		const claims = user.claims ?? {};
 		const isGithub = claims.via === "github";
 		const iso = (seconds: unknown) =>
 			typeof seconds === "number"
 				? new Date(seconds * 1000).toISOString()
 				: null;
 		return {
-			login: claims.sub,
+			login: user.login,
 			name:
 				typeof claims.name === "string"
 					? claims.name
@@ -133,9 +147,18 @@ export const authRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (
 			issuedAt: iso(claims.iat),
 			expiresAt: iso(claims.exp),
 			terms: isGithub
-				? await ctx.store.latestAcceptance(claims.sub)
+				? await ctx.store.latestAcceptance(user.login)
 				: null,
 		};
+	});
+
+	// Lets an MCP client revoke its own token when the user signs out there.
+	app.post("/v1/auth/logout", async (request, reply) => {
+		const user = request.user;
+		if (user?.via === "mcp" && user.tokenId) {
+			await ctx.store.tokens.revoke(user.login, user.tokenId);
+		}
+		return reply.code(204).send();
 	});
 
 	app.post("/v1/auth/login", async (request, reply) => {
@@ -228,6 +251,7 @@ export const authRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (
 			}
 			const login = profile.login;
 			if (
+				github.allowedUsers &&
 				!github.allowedUsers.includes(
 					login.toLowerCase(),
 				)
@@ -286,8 +310,11 @@ export const authRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (
 		});
 	}
 
-	app.post("/v1/auth/ws-ticket", async () => {
-		const { token, expiresAt } = await auth.issue("telemetry");
+	app.post("/v1/auth/ws-ticket", async (request) => {
+		const { token, expiresAt } = await auth.issue(
+			"telemetry",
+			request.user?.login ?? "local",
+		);
 		return { ticket: token, expiresAt };
 	});
 

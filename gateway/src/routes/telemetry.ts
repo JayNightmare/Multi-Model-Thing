@@ -15,8 +15,9 @@ export const telemetryRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (
 	app,
 	{ ctx },
 ) => {
-	app.get("/v1/telemetry", { websocket: true }, (socket) => {
-		ctx.broadcaster.addClient(socket);
+	app.get("/v1/telemetry", { websocket: true }, (socket, request) => {
+		const login = request.user?.login ?? "local";
+		ctx.broadcaster.addClient(socket, login);
 		app.log.info("Client connected to telemetry stream");
 
 		const sendError = (
@@ -58,7 +59,10 @@ export const telemetryRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (
 			}
 
 			try {
-				await ctx.runService.start(parsed.data);
+				await ctx.runService.start({
+					...parsed.data,
+					owner: login,
+				});
 			} catch (err) {
 				if (
 					err instanceof AppError &&

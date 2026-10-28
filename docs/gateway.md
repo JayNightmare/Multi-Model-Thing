@@ -15,11 +15,16 @@ Fastify 5 + TypeScript (ESM). Entry point `src/server.ts`; `buildServer()` is ex
 | `src/fuzzers/heuristic.ts` | Deterministic/seedable in-process fuzzer |
 | `src/fuzzers/semantic.ts` | HTTP client for the Python fuzzer with heuristic fallback |
 | `src/agents/sample-run.ts` | Demo agents and the run loop |
-| `src/services/run-service.ts` | Run lifecycle, persistence, broadcasting |
+| `src/services/run-service.ts` | Demo run lifecycle, persistence, broadcasting (per owner) |
+| `src/services/project-run-service.ts` | Assistant-driven runs: plan cases, hand them out one by one, record reported results |
+| `src/contracts/registry.ts` | `ContractRegistry`: Ajv-compiled JSON Schema contracts for user projects |
+| `src/contracts/demo.ts` | JSON Schema form of the demo edges, `DEMO_PROJECT_ID` |
+| `src/device.ts` | In-memory device-code flow for MCP sign-in |
+| `src/storage/{projects,tokens}.ts` | Project and MCP token repositories |
 | `src/services/broadcaster.ts` | WebSocket client set, heartbeat |
 | `src/storage/duckdb.ts` | `TraceStore` interface and DuckDB implementation |
 | `src/storage/migrate.ts` | SQL migration runner (`up` / `down`) |
-| `src/routes/*.ts` | `auth`, `health`, `traces`, `telemetry` plugins |
+| `src/routes/*.ts` | `auth`, `health`, `traces`, `telemetry`, `projects`, `device`, `access` plugins |
 
 ## Contract interception
 
@@ -134,7 +139,7 @@ sequenceDiagram
 ```
 
 - **CSRF:** the `state` parameter is a signed JWT containing a random nonce, and the same nonce is set in an `HttpOnly`, `SameSite=Lax` cookie scoped to `/v1/auth/github` (`Secure` when `PUBLIC_URL` is https). The callback requires both to match, so only the browser that started the flow can finish it.
-- **Allowlist:** `GITHUB_ALLOWED_USERS` is mandatory when GitHub is enabled; the gateway refuses to start with an empty list. Logins are compared case-insensitively.
+- **Allowlist:** `GITHUB_ALLOWED_USERS` is mandatory when GitHub is enabled; the gateway refuses to start with an empty list. Use `*` to allow any GitHub account (an explicit choice, never the default). Logins are compared case-insensitively.
 - **No scopes:** the app requests none; it only reads the public `login` from `GET /user`. The GitHub access token is used once and discarded.
 - **One-time code:** the browser is redirected with a random 256-bit code (60 s, single-use, held in memory) instead of the JWT, so tokens never appear in URLs, history or logs.
 - **Errors:** failures redirect to the studio's `/signin` page with `login_error=state|denied|github|not_allowed|terms|server`.

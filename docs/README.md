@@ -8,6 +8,7 @@ A harness that sits between agents in a multi-agent workflow, deliberately corru
 | [gateway.md](gateway.md) | Fastify service: contracts, interceptor, fuzzers, run orchestration, storage, auth |
 | [fuzzer.md](fuzzer.md) | Python semantic fuzzer: strategies, mock engine, LLM engine |
 | [studio.md](studio.md) | React console: pages, hooks, libraries, auth flow |
+| [mcp.md](mcp.md) | MCP server for testing your own agents: sign-in, `.mml` folder, tools, security model |
 | [math.md](math.md) | Every formula and probability model in the project |
 | [operations.md](operations.md) | Configuration, deployment, security, troubleshooting |
 
@@ -17,6 +18,7 @@ A harness that sits between agents in a multi-agent workflow, deliberately corru
 - **Edge**: a directed hand-off between two agents. Each edge has a Zod schema, its **contract**.
 - **Mutation**: a deliberate corruption of a payload (`TYPE_SWAP`, `KEY_OMISSION`, `BOUNDARY_OVERFLOW`, `SEMANTIC_DRIFT`).
 - **Trace**: the record of one delivery across one edge (original payload, delivered payload, contract verdict, downstream outcome, latency).
+- **Project**: a user's set of agents, edges, contracts and runs. The built-in `demo` project is shared; every other project is private to its owner.
 - **Run**: one execution pass over the edges, producing a set of traces.
 - **Violation**: the delivered payload fails the edge's schema.
 - **Downstream status**: `HANDLED` (agent returned), `FAILED` (agent threw, a *breach*), `BYPASSED` (a mutation was applied but the payload still satisfied the contract).
@@ -26,6 +28,7 @@ A harness that sits between agents in a multi-agent workflow, deliberately corru
 
 ```
 gateway/   Fastify + TypeScript: contracts, interceptor, fuzzers, DuckDB storage, WebSocket telemetry, JWT auth
+mcp/       @nexusgit/mml-mcp: local stdio MCP server so users can test their own agents
 fuzzer/    FastAPI: semantic perturbation (local GGUF model, deterministic mock fallback)
 studio/    React 19 + Vite + Fluent UI v9 console
 docs/      This documentation

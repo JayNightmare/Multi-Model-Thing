@@ -5,6 +5,7 @@ Multi-agent workflow contract tester with three modules:
 - `gateway/` — Fastify + TypeScript daemon: Zod contract interception, WebSocket telemetry (`/v1/telemetry`), DuckDB trace storage. Port 8000.
 - `fuzzer/` — FastAPI semantic fuzzer (local GGUF model, mock fallback). Port 8001.
 - `studio/` — React 19 + Vite + Fluent UI v9 console.
+- `mcp/` — `@nexusgit/mml-mcp`, a local stdio MCP server that lets users test their own agents from their AI assistant.
 
 Full documentation (architecture, code walkthrough, formulas, operations) is in [docs/](docs/README.md).
 
@@ -26,12 +27,16 @@ The gateway is open unless GitHub sign-in or `AUTH_PASSWORD` is configured. When
 **GitHub sign-in (studio)**
 
 1. Create a GitHub OAuth App (Settings, Developer settings, OAuth Apps) with *Authorization callback URL* `https://gateway.nexusgit.info/v1/auth/github/callback` (or `<PUBLIC_URL>/v1/auth/github/callback`).
-2. Set `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, `GITHUB_ALLOWED_USERS` (comma-separated logins, **required**: anyone not listed is refused), `PUBLIC_URL` (the gateway) and `STUDIO_URL` (the studio), plus `JWT_SECRET`.
+2. Set `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, `GITHUB_ALLOWED_USERS` (`*` lets any GitHub account sign in; or a comma-separated list of logins to restrict access; **required**, an empty value is refused), `PUBLIC_URL` (the gateway) and `STUDIO_URL` (the studio), plus `JWT_SECRET`.
 3. The studio's `/signin` page requires ticking the Terms and Privacy checkbox, then shows **Continue with GitHub**. After GitHub approves, the gateway checks the allowlist, records the accepted Terms version (`LEGAL_VERSION`, bump it when the legal text changes) and sends the browser back to `/signin` with a one-time code (valid 60 s), which the studio trades at `POST /v1/auth/exchange` for the JWT. The token never appears in a URL.
 
 **Password login (scripts)**: if `AUTH_PASSWORD` is set, `POST /v1/auth/login` `{ "password": "..." }` returns `{ token, expiresAt }`. Repeated failures are rate limited. Scripts that post traces use this and send `Authorization: Bearer <token>`.
 
 `POST /v1/auth/ws-ticket` (bearer required) returns a 30 s ticket; connect to `/v1/telemetry?ticket=...`, since browsers cannot send headers on a WebSocket.
+
+## Testing your own agents (MCP)
+
+Add the server to your editor's MCP config (`npx -y @nexusgit/mml-mcp`), ask the assistant to sign in, approve the code in the studio, then run the `mml-define-contracts` and `mml-run-pass` prompts. The assistant calls your agents; contracts are JSON Schema; a `.mml/` folder in the workspace holds non-secret context; results show in your project in the studio. See [docs/mcp.md](docs/mcp.md). Local development: `npm --prefix mcp install && npm --prefix mcp test`, and set `MML_API_URL=http://localhost:8000`.
 
 ## Replaying runs
 
@@ -62,6 +67,7 @@ Traffic is encrypted with TLS (`https`/`wss`) from the browser to Caddy.
 
 ```
 npm --prefix gateway test
+npm --prefix mcp test
 npm --prefix studio test
 (cd fuzzer && .venv/bin/python -m pytest)
 ```

@@ -86,6 +86,7 @@ export type TelemetryFrame =
 			type: "RUN_STARTED";
 			runId: string;
 			timestamp: string;
+			projectId?: string;
 			summary: {
 				fuzzerMode: string;
 				edgeId?: string;
@@ -96,12 +97,14 @@ export type TelemetryFrame =
 			type: "TRACE_EMITTED";
 			runId: string;
 			timestamp: string;
+			projectId?: string;
 			trace: TraceRecord;
 	  }
 	| {
 			type: "RUN_COMPLETED";
 			runId: string;
 			timestamp: string;
+			projectId?: string;
 			summary: { totalTraces: number };
 	  }
 	| {

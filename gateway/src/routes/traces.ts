@@ -5,14 +5,11 @@ import {
 	deriveDownstreamStatus,
 	type TraceRecord,
 } from "../contracts/interceptor.js";
-import {
-	EDGES,
-	MUTATION_TYPES,
-	getEdge,
-	toViolations,
-} from "../contracts/schemas.js";
+import { DEMO_PROJECT_ID } from "../contracts/demo.js";
+import { MUTATION_TYPES } from "../contracts/schemas.js";
 import type { AppContext } from "../context.js";
 import { AppError } from "../errors.js";
+import { accessProject, requireUser, viewerFor } from "./access.js";
 
 export function parseOrThrow<S extends ZodTypeAny>(
 	schema: S,
@@ -32,7 +29,8 @@ export function parseOrThrow<S extends ZodTypeAny>(
 
 const IngestBody = z
 	.object({
-		runId: z.string().min(1),
+		projectId: z.string().min(1).default(DEMO_PROJECT_ID),
+		runId: z.string().min(1).max(128),
 		edgeId: z.string().min(1),
 		payload: z.unknown(),
 		mutation: z
@@ -49,9 +47,14 @@ const IngestBody = z
 	});
 
 const TraceQuery = z.object({
+	projectId: z.string().min(1).default(DEMO_PROJECT_ID),
 	runId: z.string().min(1).optional(),
 	edgeId: z.string().min(1).optional(),
 	limit: z.coerce.number().int().min(1).max(1000).optional(),
+});
+
+const RunsQuery = z.object({
+	projectId: z.string().min(1).default(DEMO_PROJECT_ID),
 });
 
 export const traceRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (
@@ -59,27 +62,35 @@ export const traceRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (
 	{ ctx },
 ) => {
 	app.post("/v1/traces", async (request, reply) => {
+		const user = requireUser(request);
 		const body = parseOrThrow(IngestBody, request.body);
-		const edge = getEdge(body.edgeId);
+		await accessProject(ctx, request, body.projectId, "run");
+		const { edges } = await ctx.store.projects.getWorkflow(
+			body.projectId,
+		);
+		const edge = edges.find((e) => e.id === body.edgeId);
 		if (!edge) {
 			throw new AppError(
 				"UNKNOWN_EDGE",
 				`Unknown edge "${body.edgeId}"`,
 				422,
-				{ knownEdges: EDGES.map((e) => e.id) },
+				{ knownEdges: edges.map((e) => e.id) },
 			);
 		}
 
-		const validation = edge.schema.safeParse(body.payload);
-		const contractViolated = !validation.success;
+		const violations = ctx.registry.validate(
+			edge.schema,
+			body.payload,
+		);
+		const contractViolated = violations.length > 0;
 		const mutationType = body.mutation?.mutationType ?? "NONE";
 
 		const trace: TraceRecord = {
 			traceId: randomUUID(),
 			runId: body.runId,
 			edgeId: edge.id,
-			sourceNodeId: edge.sourceNodeId,
-			targetNodeId: edge.targetNodeId,
+			sourceNodeId: edge.source,
+			targetNodeId: edge.target,
 			mutationType,
 			strategy: body.mutation?.strategy,
 			fuzzerFallback: false,
@@ -87,9 +98,7 @@ export const traceRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (
 				body.mutation?.originalPayload ?? body.payload,
 			perturbedPayload: body.payload,
 			contractViolated,
-			violations: validation.success
-				? []
-				: toViolations(validation.error.issues),
+			violations,
 			downstreamHandled: true,
 			downstreamStatus: deriveDownstreamStatus({
 				handled: true,
@@ -101,9 +110,22 @@ export const traceRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (
 		};
 
 		try {
-			await ctx.store.ensureRun(trace.runId, "heuristic");
+			const ok = await ctx.store.ensureRun(
+				trace.runId,
+				"heuristic",
+				body.projectId,
+				user.login,
+			);
+			if (!ok) {
+				throw new AppError(
+					"CONFLICT",
+					"That run id belongs to another project or user",
+					409,
+				);
+			}
 			await ctx.store.saveTrace(trace);
 		} catch (err) {
+			if (err instanceof AppError) throw err;
 			request.log.error(
 				err,
 				"Failed to persist ingested trace",
@@ -115,25 +137,54 @@ export const traceRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (
 			);
 		}
 
-		ctx.broadcaster.broadcast({
-			type: "TRACE_EMITTED",
-			runId: trace.runId,
-			timestamp: trace.timestamp,
-			trace,
+		ctx.broadcaster.broadcast(
+			{
+				type: "TRACE_EMITTED",
+				runId: trace.runId,
+				timestamp: trace.timestamp,
+				projectId: body.projectId,
+				trace,
+			},
+			user.login,
+		);
+		return reply.code(201).send({
+			traceId: trace.traceId,
+			valid: !contractViolated,
+			violations: trace.violations,
 		});
-		return reply
-			.code(201)
-			.send({
-				traceId: trace.traceId,
-				valid: !contractViolated,
-				violations: trace.violations,
-			});
 	});
 
 	app.get("/v1/traces", async (request) => {
+		const user = requireUser(request);
 		const query = parseOrThrow(TraceQuery, request.query);
-		return { traces: await ctx.store.listTraces(query) };
+		const project = await accessProject(
+			ctx,
+			request,
+			query.projectId,
+			"read",
+		);
+		return {
+			traces: await ctx.store.listTraces({
+				...query,
+				viewer: viewerFor(project, user.login),
+			}),
+		};
 	});
 
-	app.get("/v1/runs", async () => ({ runs: await ctx.store.listRuns() }));
+	app.get("/v1/runs", async (request) => {
+		const user = requireUser(request);
+		const { projectId } = parseOrThrow(RunsQuery, request.query);
+		const project = await accessProject(
+			ctx,
+			request,
+			projectId,
+			"read",
+		);
+		return {
+			runs: await ctx.store.listRuns({
+				projectId,
+				viewer: viewerFor(project, user.login),
+			}),
+		};
+	});
 };
