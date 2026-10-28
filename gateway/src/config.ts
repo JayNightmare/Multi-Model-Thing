@@ -19,6 +19,8 @@ export interface AuthConfig {
 
 export interface AppConfig {
 	auth: AuthConfig;
+	/** Bump when the Terms or Privacy Policy change; users must accept the new version at sign-in. */
+	legalVersion: string;
 	trustProxy: boolean;
 	port: number;
 	host: string;
@@ -116,6 +118,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
 	}
 	return {
 		auth: loadAuthConfig(env),
+		legalVersion: env.LEGAL_VERSION?.trim() || "1",
 		trustProxy: env.TRUST_PROXY === "true",
 		port,
 		host: env.HOST ?? "0.0.0.0",

@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { loadConfig } from "../src/config.js";
 import { buildServer } from "../src/server.js";
+import { DuckDbTraceStore, type TraceStore } from "../src/storage/duckdb.js";
 
 const ENV = {
 	DUCKDB_PATH: ":memory:",
@@ -31,18 +32,25 @@ const fakeGithub: typeof fetch = async (input, init) => {
 	if (url === "https://api.github.com/user") {
 		const auth =
 			new Headers(init?.headers).get("authorization") ?? "";
+		const login = auth.replace("Bearer tok-", "");
 		return Response.json({
-			login: auth.replace("Bearer tok-", ""),
+			login,
+			name: `${login} Name`,
+			avatar_url: `https://avatars.githubusercontent.com/u/1?v=${login}`,
 		});
 	}
 	return new Response("unexpected", { status: 500 });
 };
 
 let app: FastifyInstance;
+let store: TraceStore;
 
 beforeAll(async () => {
+	store = new DuckDbTraceStore(":memory:");
+	await store.init();
 	app = await buildServer({
 		config: loadConfig(ENV),
+		store,
 		fetch: fakeGithub,
 	});
 	await app.ready();
@@ -52,8 +60,11 @@ afterAll(async () => {
 	await app.close();
 });
 
-async function startFlow() {
-	const res = await app.inject({ url: "/v1/auth/github/login" });
+async function startFlow(accept = "1") {
+	const res = await app.inject({
+		url: "/v1/auth/github/login",
+		query: { accept },
+	});
 	const location = new URL(res.headers.location as string);
 	const cookie = String(res.headers["set-cookie"]).split(";")[0];
 	return {
@@ -105,6 +116,7 @@ describe("GitHub sign-in", () => {
 		const res = await app.inject({ url: "/v1/auth/status" });
 		expect(res.json()).toEqual({
 			required: true,
+			legalVersion: "1",
 			methods: { github: true, password: false },
 		});
 		const login = await app.inject({
@@ -134,6 +146,7 @@ describe("GitHub sign-in", () => {
 	it("signs in an allowed user and issues a working JWT via a one-time code", async () => {
 		const back = await callback("good-Octocat");
 		expect(back.origin).toBe("https://studio.test");
+		expect(back.pathname).toBe("/signin");
 		const code = back.searchParams.get("login_code")!;
 		expect(code).toBeTruthy();
 
@@ -189,5 +202,60 @@ describe("GitHub sign-in", () => {
 		expect((await app.inject({ url: "/v1/runs" })).statusCode).toBe(
 			401,
 		);
+	});
+
+	it("refuses to start sign-in without accepting the current terms", async () => {
+		for (const query of [{}, { accept: "0" }]) {
+			const res = await app.inject({
+				url: "/v1/auth/github/login",
+				query,
+			});
+			const back = new URL(res.headers.location as string);
+			expect(back.origin).toBe("https://studio.test");
+			expect(back.searchParams.get("login_error")).toBe(
+				"terms",
+			);
+			expect(res.headers["set-cookie"]).toBeUndefined();
+		}
+	});
+
+	it("records acceptance once per version and reports the profile at /me", async () => {
+		for (let i = 0; i < 2; i++) {
+			const back = await callback("good-someone-else");
+			const code = back.searchParams.get("login_code")!;
+			const exchange = await app.inject({
+				method: "POST",
+				url: "/v1/auth/exchange",
+				payload: { code },
+			});
+			const me = await app.inject({
+				url: "/v1/auth/me",
+				headers: {
+					authorization: `Bearer ${exchange.json().token}`,
+				},
+			});
+			expect(me.statusCode).toBe(200);
+			expect(me.json()).toMatchObject({
+				login: "someone-else",
+				name: "someone-else Name",
+				avatarUrl: expect.stringContaining(
+					"https://avatars.githubusercontent.com/",
+				),
+				method: "github",
+				terms: { version: "1" },
+			});
+			expect(me.json().expiresAt).toBeTruthy();
+		}
+		const first = await store.latestAcceptance("Someone-Else");
+		await callback("good-someone-else");
+		expect(await store.latestAcceptance("someone-else")).toEqual(
+			first,
+		);
+	});
+
+	it("requires a token for /me", async () => {
+		expect(
+			(await app.inject({ url: "/v1/auth/me" })).statusCode,
+		).toBe(401);
 	});
 });

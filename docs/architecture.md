@@ -106,6 +106,11 @@ erDiagram
         double duration_ms
         timestamp created_at
     }
+    terms_acceptances {
+        varchar login PK "lower-cased GitHub login"
+        varchar version PK "LEGAL_VERSION accepted"
+        timestamp accepted_at
+    }
 ```
 
 There is no foreign key by design: DuckDB rejects updates to a parent row that has children, and `completeRun` updates `workflow_runs`. Indexes exist on `run_id` and `edge_id`. Migrations live in `gateway/migrations/` as `NNN_name.up.sql` / `.down.sql`.
@@ -116,10 +121,11 @@ There is no foreign key by design: DuckDB rejects updates to a parent row that h
 | --- | --- | --- | --- |
 | GET | `/health` | public | `healthy`, `degraded` (fuzzer down, still 200) or `unhealthy` (DuckDB down, 503) |
 | GET | `/openapi.json` | public | OpenAPI document |
-| GET | `/v1/auth/status` | public | `{ required, methods: { github, password } }` |
+| GET | `/v1/auth/status` | public | `{ required, legalVersion, methods: { github, password } }` |
 | POST | `/v1/auth/login` | public | Password login (only if `AUTH_PASSWORD` set): `{ password }` returns `{ token, expiresAt, tokenType }` |
-| GET | `/v1/auth/github/login` | public | Redirects to GitHub (only if GitHub configured) |
-| GET | `/v1/auth/github/callback` | public | OAuth callback; redirects to the studio with `login_code` or `login_error` |
+| GET | `/v1/auth/github/login?accept=` | public | Redirects to GitHub (only if GitHub configured); `accept` must equal the current `legalVersion` |
+| GET | `/v1/auth/github/callback` | public | OAuth callback; redirects to the studio's `/signin` with `login_code` or `login_error` |
+| GET | `/v1/auth/me` | bearer | Current user: login, name, avatar, method, session times, accepted Terms version |
 | POST | `/v1/auth/exchange` | public | `{ code }` returns `{ token, expiresAt, tokenType, user }` |
 | POST | `/v1/auth/ws-ticket` | bearer | 30 s ticket for the WebSocket |
 | POST | `/v1/traces` | bearer | Ingest an externally produced payload, validate it, store and broadcast |

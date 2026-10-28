@@ -27,6 +27,7 @@ import { useTelemetry } from "../hooks/TelemetryContext";
 import { useAsync } from "../hooks/useAsync";
 import { buildDiffRows } from "../lib/diff";
 import { formatTime } from "../lib/events";
+import { ROUTES } from "../lib/routes";
 
 const useStyles = makeStyles({
 	head: {
@@ -85,7 +86,7 @@ export function PayloadDiffIndex() {
 			/>
 		);
 	}
-	return <Navigate to={`/edges/${first.id}`} replace />;
+	return <Navigate to={ROUTES.edge(first.id)} replace />;
 }
 
 export default function PayloadDiff() {
@@ -136,7 +137,9 @@ export default function PayloadDiff() {
 							value={edgeId}
 							onChange={(_, d) =>
 								navigate(
-									`/edges/${d.value}`,
+									ROUTES.edge(
+										d.value,
+									),
 								)
 							}
 						>
@@ -361,6 +364,7 @@ export default function PayloadDiff() {
 											{
 												v.path
 											}
+
 											:{" "}
 											{
 												v.message
@@ -389,7 +393,7 @@ export default function PayloadDiff() {
 							}
 							onClick={() =>
 								navigate(
-									"/events",
+									ROUTES.events,
 								)
 							}
 						>

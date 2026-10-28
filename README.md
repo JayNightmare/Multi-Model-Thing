@@ -27,7 +27,7 @@ The gateway is open unless GitHub sign-in or `AUTH_PASSWORD` is configured. When
 
 1. Create a GitHub OAuth App (Settings, Developer settings, OAuth Apps) with *Authorization callback URL* `https://gateway.nexusgit.info/v1/auth/github/callback` (or `<PUBLIC_URL>/v1/auth/github/callback`).
 2. Set `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, `GITHUB_ALLOWED_USERS` (comma-separated logins, **required**: anyone not listed is refused), `PUBLIC_URL` (the gateway) and `STUDIO_URL` (the studio), plus `JWT_SECRET`.
-3. The studio shows **Sign in with GitHub**. After GitHub approves, the gateway checks the allowlist and sends the browser back to the studio with a one-time code (valid 60 s), which the studio trades at `POST /v1/auth/exchange` for the JWT. The token never appears in a URL.
+3. The studio's `/signin` page requires ticking the Terms and Privacy checkbox, then shows **Continue with GitHub**. After GitHub approves, the gateway checks the allowlist, records the accepted Terms version (`LEGAL_VERSION`, bump it when the legal text changes) and sends the browser back to `/signin` with a one-time code (valid 60 s), which the studio trades at `POST /v1/auth/exchange` for the JWT. The token never appears in a URL.
 
 **Password login (scripts)**: if `AUTH_PASSWORD` is set, `POST /v1/auth/login` `{ "password": "..." }` returns `{ token, expiresAt }`. Repeated failures are rate limited. Scripts that post traces use this and send `Authorization: Bearer <token>`.
 
@@ -37,7 +37,7 @@ The gateway is open unless GitHub sign-in or `AUTH_PASSWORD` is configured. When
 
 Every run stores a `seed` (the run id by default). The heuristic fuzzer's key choices are derived from it, so `{ "type": "START_TEST_RUN", "fuzzerMode": "heuristic", "seed": "<earlier seed>" }` reproduces the same mutated payloads. Semantic mode is reproducible only when the fuzzer service is in mock mode or falls back to the heuristic engine.
 
-The studio shows a sign-in form when the gateway requires auth.
+The studio has a public site (landing page `/`, `/how-it-works`, `/terms`, `/privacy`, `/signin`) and the app under `/app` (canvas, payload diff, event log, report export, account), which requires sign-in. `GET /v1/auth/me` returns the signed-in user for the account page.
 
 ## Deploy (GitHub Pages + self-hosted gateway)
 

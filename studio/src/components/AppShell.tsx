@@ -4,6 +4,12 @@ import {
 	Button,
 	Caption1,
 	Divider,
+	Menu,
+	MenuDivider,
+	MenuItem,
+	MenuList,
+	MenuPopover,
+	MenuTrigger,
 	Subtitle2,
 	Tab,
 	TabList,
@@ -14,21 +20,24 @@ import {
 import {
 	ArrowDownloadRegular,
 	ArrowSwapRegular,
-	DesktopRegular,
+	DocumentRegular,
 	GridRegular,
+	PersonRegular,
 	PlugConnectedRegular,
 	PlugDisconnectedRegular,
+	ShieldRegular,
+	SignOutRegular,
 	TextBulletListLtrRegular,
-	WeatherMoonRegular,
-	WeatherSunnyRegular,
 } from "@fluentui/react-icons";
 import { motion, useReducedMotion } from "motion/react";
-import type { ReactElement, ReactNode } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import type { ReactNode } from "react";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { api } from "../api";
+import { useAuth } from "../hooks/AuthContext";
 import { useTelemetry } from "../hooks/TelemetryContext";
 import { useAsync } from "../hooks/useAsync";
-import { useThemeMode, type ThemeMode } from "../theme/theme";
+import { ROUTES } from "../lib/routes";
+import { ThemeToggle } from "./ThemeToggle";
 
 const useStyles = makeStyles({
 	root: {
@@ -56,6 +65,8 @@ const useStyles = makeStyles({
 		alignItems: "center",
 		gap: "12px",
 		fontWeight: 700,
+		color: "inherit",
+		textDecoration: "none",
 	},
 	logo: {
 		width: "28px",
@@ -104,36 +115,31 @@ const useStyles = makeStyles({
 });
 
 const NAV = [
-	{ value: "/", label: "Contract Canvas", icon: <GridRegular /> },
-	{ value: "/edges", label: "Payload Diff", icon: <ArrowSwapRegular /> },
+	{ value: ROUTES.app, label: "Contract Canvas", icon: <GridRegular /> },
 	{
-		value: "/events",
+		value: ROUTES.edges,
+		label: "Payload Diff",
+		icon: <ArrowSwapRegular />,
+	},
+	{
+		value: ROUTES.events,
 		label: "Event Log",
 		icon: <TextBulletListLtrRegular />,
 	},
 	{
-		value: "/report",
+		value: ROUTES.report,
 		label: "Report Export",
 		icon: <ArrowDownloadRegular />,
 	},
 ];
 
-const NEXT_MODE: Record<ThemeMode, ThemeMode> = {
-	dark: "light",
-	light: "system",
-	system: "dark",
-};
-const MODE_ICON: Record<ThemeMode, ReactElement> = {
-	dark: <WeatherMoonRegular />,
-	light: <WeatherSunnyRegular />,
-	system: <DesktopRegular />,
-};
-
+// Empty on pages without a tab (the account page) so no tab appears selected.
 function activeNav(pathname: string): string {
-	if (pathname.startsWith("/edges")) return "/edges";
-	if (pathname.startsWith("/events")) return "/events";
-	if (pathname.startsWith("/report")) return "/report";
-	return "/";
+	if (pathname.startsWith(ROUTES.edges)) return ROUTES.edges;
+	if (pathname.startsWith(ROUTES.events)) return ROUTES.events;
+	if (pathname.startsWith(ROUTES.report)) return ROUTES.report;
+	if (pathname.startsWith(ROUTES.account)) return "";
+	return ROUTES.app;
 }
 
 function GatewayStatus() {
@@ -166,16 +172,21 @@ export function AppShell({ children }: { children: ReactNode }) {
 	const navigate = useNavigate();
 	const { pathname } = useLocation();
 	const { isConnected } = useTelemetry();
-	const { mode, setMode } = useThemeMode();
+	const { user, required, signOut } = useAuth();
 	const reduceMotion = useReducedMotion();
 
 	return (
 		<div className={styles.root}>
 			<header className={styles.header}>
-				<div className={styles.brand}>
-					<span className={styles.logo}>CT</span>
+				<Link to={ROUTES.app} className={styles.brand}>
+					<span
+						className={styles.logo}
+						aria-hidden="true"
+					>
+						CT
+					</span>
 					<Subtitle2>Contract Tester</Subtitle2>
-				</div>
+				</Link>
 				<div className={styles.actions}>
 					<span className={styles.live}>
 						{isConnected ? (
@@ -190,28 +201,97 @@ export function AppShell({ children }: { children: ReactNode }) {
 						</Caption1>
 					</span>
 					<GatewayStatus />
-					<Tooltip
-						content={`Theme: ${mode}`}
-						relationship="label"
-					>
-						<Button
-							appearance="subtle"
-							icon={MODE_ICON[mode]}
-							onClick={() =>
-								setMode(
-									NEXT_MODE[
-										mode
-									],
-								)
-							}
-							aria-label="Toggle theme"
-						/>
-					</Tooltip>
-					<Avatar
-						name="Red Team"
-						size={28}
-						color="colorful"
-					/>
+					<ThemeToggle />
+					{user ? (
+						<Menu>
+							<MenuTrigger
+								disableButtonEnhancement
+							>
+								<Button
+									appearance="subtle"
+									aria-label="Account menu"
+									icon={
+										<Avatar
+											name={
+												user.name ??
+												user.login
+											}
+											image={
+												user.avatarUrl
+													? {
+															src: user.avatarUrl,
+														}
+													: undefined
+											}
+											size={
+												28
+											}
+											color="colorful"
+										/>
+									}
+								/>
+							</MenuTrigger>
+							<MenuPopover>
+								<MenuList>
+									<MenuItem
+										icon={
+											<PersonRegular />
+										}
+										onClick={() =>
+											navigate(
+												ROUTES.account,
+											)
+										}
+									>
+										Account
+									</MenuItem>
+									<MenuItem
+										icon={
+											<DocumentRegular />
+										}
+										onClick={() =>
+											navigate(
+												ROUTES.terms,
+											)
+										}
+									>
+										Terms
+									</MenuItem>
+									<MenuItem
+										icon={
+											<ShieldRegular />
+										}
+										onClick={() =>
+											navigate(
+												ROUTES.privacy,
+											)
+										}
+									>
+										Privacy
+									</MenuItem>
+									{required ? (
+										<>
+											<MenuDivider />
+											<MenuItem
+												icon={
+													<SignOutRegular />
+												}
+												onClick={() => {
+													navigate(
+														ROUTES.home,
+													);
+													signOut();
+												}}
+											>
+												Sign
+												out
+											</MenuItem>
+										</>
+									) : null}
+								</MenuList>
+							</MenuPopover>
+						</Menu>
+					) : null}
 				</div>
 			</header>
 			<div className={styles.shell}>

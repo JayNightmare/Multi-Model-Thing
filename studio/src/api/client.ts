@@ -81,16 +81,32 @@ function telemetryUrl(): string {
 
 export interface AuthStatus {
 	required: boolean;
+	legalVersion: string;
 	methods: { github: boolean; password: boolean };
+}
+
+export interface UserProfile {
+	login: string;
+	name: string | null;
+	avatarUrl: string | null;
+	method: "github" | "password" | "none";
+	issuedAt: string | null;
+	expiresAt: string | null;
+	terms: { version: string; acceptedAt: string } | null;
 }
 
 export function fetchAuthStatus(): Promise<AuthStatus> {
 	return request<AuthStatus>("/v1/auth/status");
 }
 
+export function fetchMe(): Promise<UserProfile> {
+	return request<UserProfile>("/v1/auth/me");
+}
+
 // A full-page navigation: GitHub redirects back through the gateway to the studio.
-export function githubLoginUrl(): string {
-	return `${BASE}/v1/auth/github/login`;
+// The gateway refuses to start sign-in unless the accepted legal version is current.
+export function githubLoginUrl(legalVersion: string): string {
+	return `${BASE}/v1/auth/github/login?accept=${encodeURIComponent(legalVersion)}`;
 }
 
 export async function exchangeLoginCode(code: string): Promise<string> {

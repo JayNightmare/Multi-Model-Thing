@@ -15,12 +15,32 @@ export function authorizeUrl(cfg: GithubAuthConfig, state: string): string {
 	return url.toString();
 }
 
-/** Exchanges an OAuth code for the user's GitHub login. The GitHub access token is never stored. */
+export interface GithubProfile {
+	login: string;
+	name: string | null;
+	avatarUrl: string | null;
+}
+
+// Only GitHub's avatar CDN is trusted, since the studio renders this URL in an <img>.
+function safeAvatar(value: unknown): string | null {
+	if (typeof value !== "string") return null;
+	try {
+		const url = new URL(value);
+		return url.protocol === "https:" &&
+			url.hostname === "avatars.githubusercontent.com"
+			? url.toString()
+			: null;
+	} catch {
+		return null;
+	}
+}
+
+/** Exchanges an OAuth code for the user's GitHub profile. The GitHub access token is never stored. */
 export async function fetchGithubLogin(
 	cfg: GithubAuthConfig,
 	code: string,
 	fetchImpl: typeof fetch,
-): Promise<string> {
+): Promise<GithubProfile> {
 	const tokenRes = await fetchImpl(
 		"https://github.com/login/oauth/access_token",
 		{
@@ -62,12 +82,24 @@ export async function fetchGithubLogin(
 	});
 	if (!userRes.ok)
 		throw new Error(`GitHub user endpoint HTTP ${userRes.status}`);
-	const login = ((await userRes.json()) as { login?: unknown }).login;
+	const user = (await userRes.json()) as {
+		login?: unknown;
+		name?: unknown;
+		avatar_url?: unknown;
+	};
+	const login = user.login;
 	if (
 		typeof login !== "string" ||
 		!/^[A-Za-z0-9][A-Za-z0-9-]*(\[bot\])?$/.test(login)
 	) {
 		throw new Error("GitHub returned an unexpected login");
 	}
-	return login;
+	return {
+		login,
+		name:
+			typeof user.name === "string" && user.name.length <= 200
+				? user.name
+				: null,
+		avatarUrl: safeAvatar(user.avatar_url),
+	};
 }

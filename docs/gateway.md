@@ -120,15 +120,15 @@ sequenceDiagram
     participant B as Browser (studio)
     participant GW as Gateway
     participant GH as GitHub
-    B->>GW: GET /v1/auth/github/login
+    B->>GW: GET /v1/auth/github/login?accept=legalVersion
     GW-->>B: 302 to GitHub + state JWT, Set-Cookie oauth_nonce
     B->>GH: authorize
     GH-->>B: 302 to /v1/auth/github/callback?code&state
     B->>GW: callback (cookie sent)
     GW->>GW: state valid and nonce matches cookie
     GW->>GH: code to access token, then GET /user
-    GW->>GW: login in GITHUB_ALLOWED_USERS
-    GW-->>B: 302 to STUDIO_URL/?login_code=one-time
+    GW->>GW: login in GITHUB_ALLOWED_USERS, record terms acceptance
+    GW-->>B: 302 to STUDIO_URL/signin?login_code=one-time
     B->>GW: POST /v1/auth/exchange {code}
     GW-->>B: JWT
 ```
@@ -137,7 +137,9 @@ sequenceDiagram
 - **Allowlist:** `GITHUB_ALLOWED_USERS` is mandatory when GitHub is enabled; the gateway refuses to start with an empty list. Logins are compared case-insensitively.
 - **No scopes:** the app requests none; it only reads the public `login` from `GET /user`. The GitHub access token is used once and discarded.
 - **One-time code:** the browser is redirected with a random 256-bit code (60 s, single-use, held in memory) instead of the JWT, so tokens never appear in URLs, history or logs.
-- **Errors:** failures redirect to the studio with `login_error=state|denied|github|not_allowed`.
+- **Errors:** failures redirect to the studio's `/signin` page with `login_error=state|denied|github|not_allowed|terms|server`.
+- **Terms acceptance:** `/v1/auth/github/login` refuses to start unless `?accept=` equals the configured `LEGAL_VERSION` (`login_error=terms`). The accepted version is signed into the state token, so it cannot be altered in transit, and is stored in `terms_acceptances` (login lower-cased, version, timestamp) once per user and version after an allowed sign-in. Bump `LEGAL_VERSION` when the Terms or Privacy Policy change; everyone then re-accepts at their next sign-in. Sessions that already exist are not interrupted.
+- **Profile:** the GitHub login, display name and avatar (only from `avatars.githubusercontent.com`) are carried in the JWT claims. `GET /v1/auth/me` returns them with the session times and the latest accepted Terms version. For password sessions it returns login `studio` and no terms; with auth disabled it returns login `local`.
 - Because codes and the failure counter live in process memory, run a single gateway instance (or add shared storage) and expect pending sign-ins to be dropped on restart.
 
 ## Tests

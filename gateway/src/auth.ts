@@ -3,6 +3,7 @@ import type { FastifyRequest } from "fastify";
 import { SignJWT, jwtVerify } from "jose";
 import type { AuthConfig, GithubAuthConfig } from "./config.js";
 import { AppError } from "./errors.js";
+import type { GithubProfile } from "./github.js";
 
 // "api" tokens authorize REST calls, "telemetry" tickets are short-lived and only open the WebSocket,
 // and "oauth-state" binds a GitHub round trip to the browser that started it.
@@ -33,7 +34,7 @@ export class AuthService {
 	private readonly key: Uint8Array;
 	private readonly loginCodes = new Map<
 		string,
-		{ login: string; expiresAt: number }
+		{ profile: GithubProfile; expiresAt: number }
 	>();
 
 	constructor(
@@ -95,19 +96,40 @@ export class AuthService {
 		return (await this.payload(token, audience)) !== null;
 	}
 
-	async issueOAuthState(nonce: string): Promise<string> {
-		return (await this.issue("oauth-state", "oauth", { nonce }))
-			.token;
+	/** Claims of a valid API token, or null. */
+	apiClaims(token: string): Promise<Record<string, unknown> | null> {
+		return this.payload(token, "api");
 	}
 
-	/** Returns the nonce embedded in a valid state token, or null. */
-	async verifyOAuthState(state: string): Promise<string | null> {
-		const nonce = (await this.payload(state, "oauth-state"))?.nonce;
-		return typeof nonce === "string" ? nonce : null;
+	/** The legal version the user ticked is signed into the state so it cannot be forged. */
+	async issueOAuthState(
+		nonce: string,
+		legalVersion: string,
+	): Promise<string> {
+		return (
+			await this.issue("oauth-state", "oauth", {
+				nonce,
+				legalVersion,
+			})
+		).token;
+	}
+
+	/** Returns the nonce and accepted legal version of a valid state token, or null. */
+	async verifyOAuthState(
+		state: string,
+	): Promise<{ nonce: string; legalVersion: string } | null> {
+		const claims = await this.payload(state, "oauth-state");
+		return typeof claims?.nonce === "string" &&
+			typeof claims.legalVersion === "string"
+			? {
+					nonce: claims.nonce,
+					legalVersion: claims.legalVersion,
+				}
+			: null;
 	}
 
 	/** One-time code the studio trades for a JWT, so the token never travels in a URL. */
-	createLoginCode(login: string): string {
+	createLoginCode(profile: GithubProfile): string {
 		const now = Date.now();
 		for (const [code, entry] of this.loginCodes) {
 			if (entry.expiresAt <= now)
@@ -115,17 +137,17 @@ export class AuthService {
 		}
 		const code = randomBytes(32).toString("base64url");
 		this.loginCodes.set(code, {
-			login,
+			profile,
 			expiresAt: now + LOGIN_CODE_TTL_MS,
 		});
 		return code;
 	}
 
-	redeemLoginCode(code: string): string | null {
+	redeemLoginCode(code: string): GithubProfile | null {
 		const entry = this.loginCodes.get(code);
 		this.loginCodes.delete(code);
 		return entry && entry.expiresAt > Date.now()
-			? entry.login
+			? entry.profile
 			: null;
 	}
 

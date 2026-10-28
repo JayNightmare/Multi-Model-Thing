@@ -3,7 +3,11 @@ import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
 import type { AppContext } from "../context.js";
 import { AppError } from "../errors.js";
-import { authorizeUrl, fetchGithubLogin } from "../github.js";
+import {
+	authorizeUrl,
+	fetchGithubLogin,
+	type GithubProfile,
+} from "../github.js";
 
 const Login = z.object({ password: z.string().min(1).max(256) });
 const Exchange = z.object({ code: z.string().min(1).max(256) });
@@ -79,11 +83,60 @@ export const authRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (
 
 	app.get("/v1/auth/status", async () => ({
 		required: auth.enabled,
+		legalVersion: ctx.config.legalVersion,
 		methods: {
 			github: github !== null,
 			password: auth.passwordEnabled,
 		},
 	}));
+
+	// The studio shows who is signed in; the profile comes from claims set at sign-in.
+	app.get("/v1/auth/me", async (request) => {
+		if (!auth.enabled) {
+			return {
+				login: "local",
+				name: null,
+				avatarUrl: null,
+				method: "none",
+				issuedAt: null,
+				expiresAt: null,
+				terms: null,
+			};
+		}
+		const token = /^Bearer (.+)$/.exec(
+			request.headers.authorization ?? "",
+		)?.[1];
+		const claims = token ? await auth.apiClaims(token) : null;
+		if (!claims || typeof claims.sub !== "string") {
+			throw new AppError(
+				"UNAUTHORIZED",
+				"Missing or invalid token",
+				401,
+			);
+		}
+		const isGithub = claims.via === "github";
+		const iso = (seconds: unknown) =>
+			typeof seconds === "number"
+				? new Date(seconds * 1000).toISOString()
+				: null;
+		return {
+			login: claims.sub,
+			name:
+				typeof claims.name === "string"
+					? claims.name
+					: null,
+			avatarUrl:
+				typeof claims.avatar === "string"
+					? claims.avatar
+					: null,
+			method: isGithub ? "github" : "password",
+			issuedAt: iso(claims.iat),
+			expiresAt: iso(claims.exp),
+			terms: isGithub
+				? await ctx.store.latestAcceptance(claims.sub)
+				: null,
+		};
+	});
 
 	app.post("/v1/auth/login", async (request, reply) => {
 		if (!auth.passwordEnabled) {
@@ -112,15 +165,26 @@ export const authRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (
 	if (github) {
 		const secureCookie = github.publicUrl.startsWith("https://");
 		const toStudio = (reply: FastifyReply, query: string) =>
-			reply.redirect(`${github.studioUrl}/?${query}`, 302);
+			reply.redirect(
+				`${github.studioUrl}/signin?${query}`,
+				302,
+			);
 
-		app.get("/v1/auth/github/login", async (_request, reply) => {
+		app.get("/v1/auth/github/login", async (request, reply) => {
+			// Signing in means accepting the current Terms and Privacy Policy.
+			const { accept } = request.query as { accept?: string };
+			if (accept !== ctx.config.legalVersion) {
+				return toStudio(reply, "login_error=terms");
+			}
 			const nonce = randomBytes(16).toString("hex");
 			setNonceCookie(reply, nonce, secureCookie, 600);
 			return reply.redirect(
 				authorizeUrl(
 					github,
-					await auth.issueOAuthState(nonce),
+					await auth.issueOAuthState(
+						nonce,
+						ctx.config.legalVersion,
+					),
 				),
 				302,
 			);
@@ -135,22 +199,22 @@ export const authRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (
 			setNonceCookie(reply, "", secureCookie, 0);
 
 			// The state JWT proves we issued it; the cookie proves this browser started the flow.
-			const stateNonce = state
+			const verified = state
 				? await auth.verifyOAuthState(state)
 				: null;
 			if (
-				!stateNonce ||
+				!verified ||
 				!cookieNonce ||
-				stateNonce !== cookieNonce
+				verified.nonce !== cookieNonce
 			) {
 				return toStudio(reply, "login_error=state");
 			}
 			if (error || !code)
 				return toStudio(reply, "login_error=denied");
 
-			let login: string;
+			let profile: GithubProfile;
 			try {
-				login = await fetchGithubLogin(
+				profile = await fetchGithubLogin(
 					github,
 					code,
 					auth.fetchImpl,
@@ -162,6 +226,7 @@ export const authRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (
 				);
 				return toStudio(reply, "login_error=github");
 			}
+			const login = profile.login;
 			if (
 				!github.allowedUsers.includes(
 					login.toLowerCase(),
@@ -176,20 +241,32 @@ export const authRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (
 					"login_error=not_allowed",
 				);
 			}
+			try {
+				await ctx.store.recordAcceptance(
+					login,
+					verified.legalVersion,
+				);
+			} catch (err) {
+				request.log.error(
+					err,
+					"Failed to record terms acceptance",
+				);
+				return toStudio(reply, "login_error=server");
+			}
 			request.log.info({ login }, "GitHub sign-in succeeded");
 			return toStudio(
 				reply,
-				`login_code=${encodeURIComponent(auth.createLoginCode(login))}`,
+				`login_code=${encodeURIComponent(auth.createLoginCode(profile))}`,
 			);
 		});
 
 		app.post("/v1/auth/exchange", async (request, reply) => {
 			assertNotLimited(request, reply);
 			const body = Exchange.safeParse(request.body);
-			const login = body.success
+			const profile = body.success
 				? auth.redeemLoginCode(body.data.code)
 				: null;
-			if (!login) {
+			if (!profile) {
 				recordFailure(request);
 				throw new AppError(
 					"UNAUTHORIZED",
@@ -198,9 +275,13 @@ export const authRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (
 				);
 			}
 			return {
-				...(await auth.issue("api", login)),
+				...(await auth.issue("api", profile.login, {
+					via: "github",
+					name: profile.name,
+					avatar: profile.avatarUrl,
+				})),
 				tokenType: "Bearer",
-				user: login,
+				user: profile.login,
 			};
 		});
 	}

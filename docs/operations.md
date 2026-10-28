@@ -16,6 +16,7 @@
 | `PUBLIC_URL` | gateway | unset | public gateway URL; the OAuth callback is `PUBLIC_URL/v1/auth/github/callback` |
 | `STUDIO_URL` | gateway | unset | studio origin the browser returns to after sign-in |
 | `JWT_SECRET` | gateway | unset | at least 32 chars; required when any auth method is enabled |
+| `LEGAL_VERSION` | gateway | `1` | version of the Terms and Privacy Policy; bump it when they change so users re-accept at sign-in |
 | `JWT_TTL_SECONDS` | gateway | 3600 | integer, minimum 60 |
 | `TRUST_PROXY` | gateway | false | set `true` behind Caddy so rate limiting sees client IPs |
 | `FUZZER_MODEL_PATH` | fuzzer | `./models/model.gguf` | missing file means mock mode |
@@ -75,6 +76,8 @@ flowchart LR
 | Gateway crashes at start with "GITHUB_ALLOWED_USERS must list at least one login" (or a missing `GITHUB_CLIENT_SECRET`, `PUBLIC_URL`, `STUDIO_URL`) | GitHub sign-in is enabled with incomplete settings |
 | GitHub shows "redirect_uri is not associated with this application" | The OAuth App's callback URL differs from `<PUBLIC_URL>/v1/auth/github/callback` |
 | Studio returns to the sign-in card with "That GitHub account is not allowed" | The login is not in `GITHUB_ALLOWED_USERS` |
+| Studio shows "You need to accept the Terms and Privacy Policy" | Sign-in was started without the checkbox, or the studio and gateway disagree on `LEGAL_VERSION` (the studio reads it from `/v1/auth/status`, so reload the page) |
+| Terms or Privacy page is blank | The legal site must allow embedding from the studio origin (`frame-ancestors` / `X-Frame-Options`); the page offers an open-in-new-tab link as a fallback |
 | Studio shows "could not be verified" after GitHub | The `oauth_nonce` cookie was not sent back: callback host differs from the login host, cookies blocked, or the flow took longer than 10 min |
 | `--env-file` error or `.env` not found | Node older than 20.6, or `.env` missing from the repo root |
 | Browser reports a CORS error | `CORS_ORIGIN` must equal the studio origin exactly (scheme and host, no trailing slash) |

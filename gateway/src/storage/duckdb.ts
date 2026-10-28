@@ -58,6 +58,11 @@ export interface TraceQuery {
 	limit?: number;
 }
 
+export interface TermsAcceptance {
+	version: string;
+	acceptedAt: string;
+}
+
 export interface TraceStore {
 	init(): Promise<void>;
 	ping(): Promise<boolean>;
@@ -73,6 +78,8 @@ export interface TraceStore {
 	completeRun(runId: string, completedAt: string): Promise<void>;
 	listTraces(query: TraceQuery): Promise<StoredTrace[]>;
 	listRuns(limit?: number): Promise<RunSummary[]>;
+	recordAcceptance(login: string, version: string): Promise<void>;
+	latestAcceptance(login: string): Promise<TermsAcceptance | null>;
 	close(): Promise<void>;
 }
 
@@ -300,6 +307,32 @@ export class DuckDbTraceStore implements TraceStore {
 					),
 				})),
 		}));
+	}
+
+	/** Keeps the first acceptance of a version; logins are matched case-insensitively. */
+	async recordAcceptance(login: string, version: string): Promise<void> {
+		await this.exec(
+			"INSERT INTO terms_acceptances (login, version, accepted_at) VALUES (?, ?, CAST(? AS TIMESTAMP)) ON CONFLICT DO NOTHING",
+			[
+				login.toLowerCase(),
+				version,
+				new Date().toISOString(),
+			],
+		);
+	}
+
+	async latestAcceptance(login: string): Promise<TermsAcceptance | null> {
+		const [row] = await this.query(
+			`SELECT version, strftime(accepted_at, '%Y-%m-%dT%H:%M:%S.%gZ') AS accepted_at
+       FROM terms_acceptances WHERE login = ? ORDER BY accepted_at DESC LIMIT 1`,
+			[login.toLowerCase()],
+		);
+		return row
+			? {
+					version: String(row.version),
+					acceptedAt: String(row.accepted_at),
+				}
+			: null;
 	}
 
 	async close(): Promise<void> {

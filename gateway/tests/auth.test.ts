@@ -51,7 +51,22 @@ describe("gateway auth", () => {
 		const status = await app.inject({ url: "/v1/auth/status" });
 		expect(status.json()).toEqual({
 			required: true,
+			legalVersion: "1",
 			methods: { github: false, password: true },
+		});
+	});
+
+	it("reports a password session at /me", async () => {
+		const { token } = (await login()).json();
+		const me = await app.inject({
+			url: "/v1/auth/me",
+			headers: { authorization: `Bearer ${token}` },
+		});
+		expect(me.statusCode).toBe(200);
+		expect(me.json()).toMatchObject({
+			login: "studio",
+			method: "password",
+			terms: null,
 		});
 	});
 

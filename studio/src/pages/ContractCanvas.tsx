@@ -39,6 +39,8 @@ import {
 } from "../components/StateViews";
 import { useTelemetry } from "../hooks/TelemetryContext";
 import { useAsync } from "../hooks/useAsync";
+import { loadPrefs } from "../lib/prefs";
+import { ROUTES } from "../lib/routes";
 import {
 	agentStatus,
 	computeMetrics,
@@ -59,6 +61,13 @@ const useStyles = makeStyles({
 		gap: "12px",
 	},
 	muted: { color: tokens.colorNeutralForeground3 },
+	steps: {
+		margin: 0,
+		paddingLeft: "20px",
+		textAlign: "left",
+		display: "grid",
+		gap: "4px",
+	},
 	flow: {
 		height: "280px",
 		borderRadius: tokens.borderRadiusMedium,
@@ -102,7 +111,9 @@ export default function ContractCanvas() {
 	const navigate = useNavigate();
 	const { resolved } = useThemeMode();
 	const telemetry = useTelemetry();
-	const [mode, setMode] = useState<FuzzerMode>("semantic");
+	const [mode, setMode] = useState<FuzzerMode>(
+		() => loadPrefs().defaultFuzzerMode,
+	);
 	const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(
 		null,
 	);
@@ -265,14 +276,16 @@ export default function ContractCanvas() {
 					onClick: () =>
 						navigate(
 							selectedEdgeId
-								? `/edges/${selectedEdgeId}`
-								: "/edges",
+								? ROUTES.edge(
+										selectedEdgeId,
+									)
+								: ROUTES.edges,
 						),
 				}}
 				secondary={{
 					label: "Export HTML report",
 					icon: <ArrowDownloadRegular />,
-					onClick: () => navigate("/report"),
+					onClick: () => navigate(ROUTES.report),
 				}}
 			/>
 
@@ -307,14 +320,51 @@ export default function ContractCanvas() {
 					title="No contract runs yet"
 					body="Run a perturbation pass to mutate payloads across the agent graph and populate edge health."
 					action={
-						<Button
-							appearance="primary"
-							icon={<PlayRegular />}
-							disabled={runDisabled}
-							onClick={run}
-						>
-							Run Perturbation Pass
-						</Button>
+						<>
+							<ol
+								className={
+									styles.steps
+								}
+							>
+								<li>
+									Run a
+									perturbation
+									pass.
+								</li>
+								<li>
+									Click a
+									red or
+									amber
+									edge,
+									then
+									open its
+									payload
+									diff.
+								</li>
+								<li>
+									Export
+									an HTML
+									report
+									from the
+									Report
+									Export
+									tab.
+								</li>
+							</ol>
+							<Button
+								appearance="primary"
+								icon={
+									<PlayRegular />
+								}
+								disabled={
+									runDisabled
+								}
+								onClick={run}
+							>
+								Run Perturbation
+								Pass
+							</Button>
+						</>
 					}
 				/>
 			) : (
@@ -451,7 +501,7 @@ export default function ContractCanvas() {
 				trace={drawerTrace}
 				onClose={() => setDrawerEdgeId(null)}
 				onOpenDiff={(edgeId) =>
-					navigate(`/edges/${edgeId}`)
+					navigate(ROUTES.edge(edgeId))
 				}
 			/>
 		</>
