@@ -14,12 +14,14 @@ import { healthRoutes } from "./routes/health.js";
 import { telemetryRoutes } from "./routes/telemetry.js";
 import { traceRoutes } from "./routes/traces.js";
 import { TelemetryBroadcaster } from "./services/broadcaster.js";
-import { RunService } from "./services/run-service.js";
+import { RunService, type FuzzerFactory } from "./services/run-service.js";
 import { DuckDbTraceStore, type TraceStore } from "./storage/duckdb.js";
 
 export interface BuildOptions {
 	config?: AppConfig;
 	store?: TraceStore;
+	/** Replaces global fetch for GitHub calls (tests). */
+	fetch?: typeof fetch;
 }
 
 export async function buildServer(
@@ -37,21 +39,31 @@ export async function buildServer(
 	const store = options.store ?? new DuckDbTraceStore(config.duckdbPath);
 	if (!options.store) await store.init();
 
-	const heuristic = new HeuristicFuzzer();
+	const createFuzzers: FuzzerFactory = (random) => {
+		const heuristic = new HeuristicFuzzer(random);
+		return {
+			heuristic,
+			semantic: new SemanticLocalFuzzer(
+				config.fuzzerUrl,
+				heuristic,
+			),
+		};
+	};
+	// Health probing only; runs build their own seeded engines.
 	const semanticFuzzer = new SemanticLocalFuzzer(
 		config.fuzzerUrl,
-		heuristic,
+		new HeuristicFuzzer(),
 	);
 	const broadcaster = new TelemetryBroadcaster();
 	const runService = new RunService({
 		store,
 		broadcaster,
-		fuzzers: { heuristic, semantic: semanticFuzzer },
+		createFuzzers,
 		log: app.log,
 	});
 	const ctx: AppContext = {
 		config,
-		auth: new AuthService(config.auth),
+		auth: new AuthService(config.auth, options.fetch),
 		store,
 		broadcaster,
 		runService,

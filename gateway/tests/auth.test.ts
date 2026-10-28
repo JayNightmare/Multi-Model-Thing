@@ -49,7 +49,10 @@ describe("gateway auth", () => {
 			200,
 		);
 		const status = await app.inject({ url: "/v1/auth/status" });
-		expect(status.json()).toEqual({ required: true });
+		expect(status.json()).toEqual({
+			required: true,
+			methods: { github: false, password: true },
+		});
 	});
 
 	it("rejects requests without a token", async () => {

@@ -8,6 +8,7 @@ const StartTestRun = z.object({
 	type: z.literal("START_TEST_RUN"),
 	fuzzerMode: z.enum(FUZZER_MODES),
 	edgeId: z.string().min(1).optional(),
+	seed: z.string().min(1).max(128).optional(),
 });
 
 export const telemetryRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (

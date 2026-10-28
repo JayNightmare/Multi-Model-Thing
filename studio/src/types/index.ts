@@ -47,6 +47,7 @@ export interface RunSummary {
 	runId: string;
 	workflowName: string;
 	fuzzerMode: FuzzerMode;
+	seed: string | null;
 	startedAt: string;
 	completedAt: string | null;
 	totalMutations: number;
@@ -85,7 +86,11 @@ export type TelemetryFrame =
 			type: "RUN_STARTED";
 			runId: string;
 			timestamp: string;
-			summary: { fuzzerMode: string; edgeId?: string };
+			summary: {
+				fuzzerMode: string;
+				edgeId?: string;
+				seed?: string;
+			};
 	  }
 	| {
 			type: "TRACE_EMITTED";
@@ -131,6 +136,8 @@ export interface StartTestRun {
 	type: "START_TEST_RUN";
 	fuzzerMode: FuzzerMode;
 	edgeId?: string;
+	/** Replays the key choices of an earlier run. */
+	seed?: string;
 }
 
 export interface IngestTraceRequest {

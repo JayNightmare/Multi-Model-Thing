@@ -7,7 +7,11 @@ export type TelemetryFrame =
 			type: "RUN_STARTED";
 			runId: string;
 			timestamp: string;
-			summary: { fuzzerMode: string; edgeId?: string };
+			summary: {
+				fuzzerMode: string;
+				edgeId?: string;
+				seed?: string;
+			};
 	  }
 	| {
 			type: "TRACE_EMITTED";

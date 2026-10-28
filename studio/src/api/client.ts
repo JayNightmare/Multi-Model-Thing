@@ -79,9 +79,26 @@ function telemetryUrl(): string {
 	return `${origin.replace(/^http/, "ws")}/v1/telemetry`;
 }
 
-export async function fetchAuthRequired(): Promise<boolean> {
-	return (await request<{ required: boolean }>("/v1/auth/status"))
-		.required;
+export interface AuthStatus {
+	required: boolean;
+	methods: { github: boolean; password: boolean };
+}
+
+export function fetchAuthStatus(): Promise<AuthStatus> {
+	return request<AuthStatus>("/v1/auth/status");
+}
+
+// A full-page navigation: GitHub redirects back through the gateway to the studio.
+export function githubLoginUrl(): string {
+	return `${BASE}/v1/auth/github/login`;
+}
+
+export async function exchangeLoginCode(code: string): Promise<string> {
+	const res = await request<{ token: string }>("/v1/auth/exchange", {
+		method: "POST",
+		body: JSON.stringify({ code }),
+	});
+	return res.token;
 }
 
 export async function login(password: string): Promise<string> {

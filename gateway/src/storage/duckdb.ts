@@ -24,6 +24,7 @@ export interface RunSummary {
 	runId: string;
 	workflowName: string;
 	fuzzerMode: FuzzerMode;
+	seed: string | null;
 	startedAt: string;
 	completedAt: string | null;
 	totalMutations: number;
@@ -65,6 +66,7 @@ export interface TraceStore {
 		workflowName: string;
 		fuzzerMode: FuzzerMode;
 		startedAt: string;
+		seed?: string;
 	}): Promise<void>;
 	ensureRun(runId: string, fuzzerMode: FuzzerMode): Promise<void>;
 	saveTrace(trace: TraceRecord): Promise<void>;
@@ -84,6 +86,13 @@ export function classifyEdgeHealth(
 }
 
 type Row = Record<string, unknown>;
+
+// Share of contract violations the downstream agent survived; 100 when nothing was violated.
+export function recoveryRate(recovered: number, violations: number): number {
+	return violations > 0
+		? Math.round((recovered / violations) * 1000) / 10
+		: 100;
+}
 
 const parseJson = (value: unknown): unknown =>
 	typeof value === "string" ? JSON.parse(value) : value;
@@ -117,14 +126,16 @@ export class DuckDbTraceStore implements TraceStore {
 		workflowName: string;
 		fuzzerMode: FuzzerMode;
 		startedAt: string;
+		seed?: string;
 	}): Promise<void> {
 		await this.exec(
-			"INSERT INTO workflow_runs (run_id, workflow_name, fuzzer_mode, started_at) VALUES (?, ?, ?, CAST(? AS TIMESTAMP))",
+			"INSERT INTO workflow_runs (run_id, workflow_name, fuzzer_mode, started_at, seed) VALUES (?, ?, ?, CAST(? AS TIMESTAMP), ?)",
 			[
 				run.runId,
 				run.workflowName,
 				run.fuzzerMode,
 				run.startedAt,
+				run.seed ?? null,
 			],
 		);
 	}
@@ -176,17 +187,16 @@ export class DuckDbTraceStore implements TraceStore {
 			`SELECT
          CAST(COALESCE(SUM(CASE WHEN mutation_type <> 'NONE' THEN 1 ELSE 0 END), 0) AS INTEGER) AS mutations,
          CAST(COALESCE(SUM(CASE WHEN downstream_status = 'FAILED' THEN 1 ELSE 0 END), 0) AS INTEGER) AS broken,
-         CAST(COALESCE(SUM(CASE WHEN mutation_type <> 'NONE' AND downstream_status <> 'FAILED' THEN 1 ELSE 0 END), 0) AS INTEGER) AS recovered
+         CAST(COALESCE(SUM(CASE WHEN contract_violated THEN 1 ELSE 0 END), 0) AS INTEGER) AS violations,
+         CAST(COALESCE(SUM(CASE WHEN contract_violated AND downstream_status <> 'FAILED' THEN 1 ELSE 0 END), 0) AS INTEGER) AS recovered
        FROM mutation_traces WHERE run_id = ?`,
 			[runId],
 		);
 		const mutations = Number(agg?.mutations ?? 0);
-		const recovered = Number(agg?.recovered ?? 0);
-		const rate =
-			mutations > 0
-				? Math.round((recovered / mutations) * 1000) /
-					10
-				: 100;
+		const rate = recoveryRate(
+			Number(agg?.recovered ?? 0),
+			Number(agg?.violations ?? 0),
+		);
 		await this.exec(
 			"UPDATE workflow_runs SET completed_at = CAST(? AS TIMESTAMP), total_mutations = ?, broken_contracts = ?, recovery_rate = ? WHERE run_id = ?",
 			[
@@ -248,7 +258,7 @@ export class DuckDbTraceStore implements TraceStore {
 
 	async listRuns(limit = 50): Promise<RunSummary[]> {
 		const runs = await this.query(
-			`SELECT run_id, workflow_name, fuzzer_mode, strftime(started_at, '%Y-%m-%dT%H:%M:%S.%gZ') AS started_at,
+			`SELECT run_id, workflow_name, fuzzer_mode, seed, strftime(started_at, '%Y-%m-%dT%H:%M:%S.%gZ') AS started_at,
               strftime(completed_at, '%Y-%m-%dT%H:%M:%S.%gZ') AS completed_at, total_mutations, broken_contracts, recovery_rate
        FROM workflow_runs ORDER BY started_at DESC LIMIT ?`,
 			[limit],
@@ -269,6 +279,7 @@ export class DuckDbTraceStore implements TraceStore {
 			runId: String(r.run_id),
 			workflowName: String(r.workflow_name),
 			fuzzerMode: r.fuzzer_mode as FuzzerMode,
+			seed: (r.seed as string | null) ?? null,
 			startedAt: String(r.started_at),
 			completedAt: (r.completed_at as string | null) ?? null,
 			totalMutations: Number(r.total_mutations ?? 0),

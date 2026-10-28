@@ -11,6 +11,7 @@ import {
 	type MutationType,
 } from "../contracts/schemas.js";
 import { AppError } from "../errors.js";
+import { seededRandom } from "../fuzzers/seed.js";
 import type { TraceStore } from "../storage/duckdb.js";
 import type { TelemetryBroadcaster } from "./broadcaster.js";
 
@@ -28,7 +29,13 @@ const MUTATIONS_BY_MODE: Record<FuzzerMode, MutationType[]> = {
 export interface RunRequest {
 	fuzzerMode: FuzzerMode;
 	edgeId?: string;
+	/** Replays a previous run's key choices; defaults to the new run id. */
+	seed?: string;
 }
+
+export type FuzzerFactory = (
+	random: () => number,
+) => Record<FuzzerMode, FuzzerEngine>;
 
 export class RunService {
 	private active = false;
@@ -37,7 +44,7 @@ export class RunService {
 		private readonly deps: {
 			store: TraceStore;
 			broadcaster: TelemetryBroadcaster;
-			fuzzers: Record<FuzzerMode, FuzzerEngine>;
+			createFuzzers: FuzzerFactory;
 			log: FastifyBaseLogger;
 		},
 	) {}
@@ -64,8 +71,11 @@ export class RunService {
 		this.active = true;
 		const { store, broadcaster, log } = this.deps;
 		const runId = randomUUID();
+		const seed = request.seed ?? runId;
 		const interceptor = new ContractProxyInterceptor(
-			this.deps.fuzzers[request.fuzzerMode],
+			this.deps.createFuzzers(seededRandom(seed))[
+				request.fuzzerMode
+			],
 		);
 
 		try {
@@ -76,6 +86,7 @@ export class RunService {
 					: "sample-claims-workflow",
 				fuzzerMode: request.fuzzerMode,
 				startedAt: new Date().toISOString(),
+				seed,
 			});
 		} catch (err) {
 			log.error(err, "Failed to persist run start");
@@ -88,6 +99,7 @@ export class RunService {
 			summary: {
 				fuzzerMode: request.fuzzerMode,
 				edgeId: request.edgeId,
+				seed,
 			},
 		});
 

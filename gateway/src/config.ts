@@ -1,6 +1,18 @@
+export interface GithubAuthConfig {
+	clientId: string;
+	clientSecret: string;
+	/** Lower-cased GitHub logins allowed to sign in. */
+	allowedUsers: string[];
+	/** Public base URL of this gateway; the OAuth callback lives under it. */
+	publicUrl: string;
+	/** Where the browser is sent after sign-in. */
+	studioUrl: string;
+}
+
 export interface AuthConfig {
 	enabled: boolean;
 	password: string;
+	github: GithubAuthConfig | null;
 	jwtSecret: string;
 	ttlSeconds: number;
 }
@@ -27,17 +39,66 @@ function parseOrigins(raw: string | undefined): (string | RegExp)[] | true {
 		.filter(Boolean);
 }
 
-// Auth is off unless AUTH_PASSWORD is set; JWT_SECRET is then mandatory.
+function requireUrl(env: NodeJS.ProcessEnv, name: string): string {
+	const raw = env[name]?.trim();
+	if (!raw)
+		throw new Error(
+			`${name} is required when GITHUB_CLIENT_ID is set`,
+		);
+	try {
+		new URL(raw);
+	} catch {
+		throw new Error(`Invalid ${name} "${raw}"`);
+	}
+	return raw.replace(/\/+$/, "");
+}
+
+function loadGithubConfig(env: NodeJS.ProcessEnv): GithubAuthConfig | null {
+	const clientId = env.GITHUB_CLIENT_ID?.trim();
+	if (!clientId) return null;
+	const clientSecret = env.GITHUB_CLIENT_SECRET?.trim();
+	if (!clientSecret) {
+		throw new Error(
+			"GITHUB_CLIENT_SECRET is required when GITHUB_CLIENT_ID is set",
+		);
+	}
+	const allowedUsers = (env.GITHUB_ALLOWED_USERS ?? "")
+		.split(",")
+		.map((u) => u.trim().toLowerCase())
+		.filter(Boolean);
+	// Without an allowlist any GitHub account could sign in.
+	if (allowedUsers.length === 0) {
+		throw new Error(
+			"GITHUB_ALLOWED_USERS must list at least one login",
+		);
+	}
+	return {
+		clientId,
+		clientSecret,
+		allowedUsers,
+		publicUrl: requireUrl(env, "PUBLIC_URL"),
+		studioUrl: requireUrl(env, "STUDIO_URL"),
+	};
+}
+
+// Auth is on when AUTH_PASSWORD or GITHUB_CLIENT_ID is set; JWT_SECRET is then mandatory.
 function loadAuthConfig(env: NodeJS.ProcessEnv): AuthConfig {
 	const password = env.AUTH_PASSWORD ?? "";
+	const github = loadGithubConfig(env);
 	const jwtSecret = env.JWT_SECRET ?? "";
 	const ttlSeconds = Number(env.JWT_TTL_SECONDS ?? 3600);
-	if (!password) {
-		return { enabled: false, password, jwtSecret, ttlSeconds };
+	if (!password && !github) {
+		return {
+			enabled: false,
+			password,
+			github,
+			jwtSecret,
+			ttlSeconds,
+		};
 	}
 	if (jwtSecret.length < 32) {
 		throw new Error(
-			"JWT_SECRET must be at least 32 characters when AUTH_PASSWORD is set",
+			"JWT_SECRET must be at least 32 characters when authentication is enabled",
 		);
 	}
 	if (!Number.isInteger(ttlSeconds) || ttlSeconds < 60) {
@@ -45,7 +106,7 @@ function loadAuthConfig(env: NodeJS.ProcessEnv): AuthConfig {
 			`Invalid JWT_TTL_SECONDS "${env.JWT_TTL_SECONDS}"`,
 		);
 	}
-	return { enabled: true, password, jwtSecret, ttlSeconds };
+	return { enabled: true, password, github, jwtSecret, ttlSeconds };
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {

@@ -8,8 +8,14 @@ services:
     environment:
       CORS_ORIGIN: ${CORS_ORIGIN:-https://studio.nexusgit.info}
       TRUST_PROXY: "true"
-      AUTH_PASSWORD: ${AUTH_PASSWORD:?set AUTH_PASSWORD in .env}
+      AUTH_PASSWORD: ${AUTH_PASSWORD:-}
       JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env (openssl rand -hex 32)}
+      JWT_TTL_SECONDS: ${JWT_TTL_SECONDS:-3600}
+      GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
+      GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
+      GITHUB_ALLOWED_USERS: ${GITHUB_ALLOWED_USERS:-}
+      PUBLIC_URL: ${PUBLIC_URL:-https://gateway.nexusgit.info}
+      STUDIO_URL: ${STUDIO_URL:-https://studio.nexusgit.info}
 
   caddy:
     image: caddy:2
