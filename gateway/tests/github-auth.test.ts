@@ -111,7 +111,10 @@ describe("loadConfig github", () => {
 	});
 
 	it("treats * as any GitHub account", () => {
-		const { github } = loadConfig({ ...ENV, GITHUB_ALLOWED_USERS: "*" }).auth;
+		const { github } = loadConfig({
+			...ENV,
+			GITHUB_ALLOWED_USERS: "*",
+		}).auth;
 		expect(github?.allowedUsers).toBeNull();
 	});
 });

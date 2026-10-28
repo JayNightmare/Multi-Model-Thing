@@ -1,6 +1,6 @@
 # MCP server (`mcp/`)
 
-`@nexusgit/mml-mcp` lets a user test their **own** agents. It is a local stdio MCP server that the user's AI assistant (VS Code, Claude Desktop, Cursor, ...) launches. The assistant calls the user's agents; Contract Tester prepares the corrupted payloads, judges the outcomes and shows the results in the studio. The server never runs user code.
+`@jaynightmare/mml-mcp` lets a user test their **own** agents. It is a local stdio MCP server that the user's AI assistant (VS Code, Claude Desktop, Cursor, ...) launches. The assistant calls the user's agents; Contract Tester prepares the corrupted payloads, judges the outcomes and shows the results in the studio. The server never runs user code.
 
 ```
 assistant (editor) <--stdio--> mml-mcp <--HTTPS, Bearer mml_...--> gateway <--> studio (GitHub sign-in)
@@ -13,20 +13,20 @@ assistant (editor) <--stdio--> mml-mcp <--HTTPS, Bearer mml_...--> gateway <--> 
 VS Code, `.vscode/mcp.json`:
 
 ```json
-{ "servers": { "mml": { "type": "stdio", "command": "npx", "args": ["-y", "@nexusgit/mml-mcp"] } } }
+{ "servers": { "mml": { "type": "stdio", "command": "npx", "args": ["-y", "@jaynightmare/mml-mcp"] } } }
 ```
 
 Claude Desktop, Cursor and others:
 
 ```json
-{ "mcpServers": { "mml": { "command": "npx", "args": ["-y", "@nexusgit/mml-mcp"] } } }
+{ "mcpServers": { "mml": { "command": "npx", "args": ["-y", "@jaynightmare/mml-mcp"] } } }
 ```
 
 Requires Node 20+.
 
 | Variable | Purpose |
 | --- | --- |
-| `MML_API_URL` | Gateway base URL. Default `https://gateway.nexusgit.info`. Must be `https`, except for `localhost`. |
+| `MML_API_URL` | Gateway base URL. Default `https://gateway.jaynightmare.info`. Must be `https`, except for `localhost`. |
 | `MML_HOME` | Where credentials are stored. Default `~/.mml`. |
 | `MML_WORKSPACE` | Workspace root for the `.mml` folder. Default: the current directory. |
 

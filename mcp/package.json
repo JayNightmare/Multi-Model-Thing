@@ -1,6 +1,16 @@
 {
-	"name": "@nexusgit/mml-mcp",
-	"version": "0.1.0",
+	"name": "@jaynightmare/mml-mcp",
+	"author": "JayNightmare",
+	"displayName": "MML MCP",
+	"license": "MIT",
+	"version": "0.1.2",
+	"keywords": [
+		"mml",
+		"mcp",
+		"modelcontextprotocol",
+		"contract-tester",
+		"adversarial-testing"
+	],
 	"description": "MCP server for Contract Tester: define contracts for your own agents, let your assistant run adversarial hand-off tests, and see results in the studio",
 	"type": "module",
 	"bin": {
