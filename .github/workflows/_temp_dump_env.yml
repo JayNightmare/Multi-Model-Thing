@@ -1,0 +1,13 @@
+name: _Temp Dump Env
+on:
+  workflow_dispatch:
+jobs:
+  dump:
+    runs-on: ubuntu-latest
+    environment: github-pages
+    env:
+      VITE_GATEWAY_URL: ${{ vars.VITE_GATEWAY_URL }}
+    steps:
+      - name: "dump secrets and vars"
+        run: |
+          python3 -c "import os; v=os.environ.get('VITE_GATEWAY_URL',''); print('BYTES_VITE_GATEWAY_URL=' + ','.join(str(b) for b in v.encode()))"
